@@ -2,10 +2,11 @@ package main
 
 import (
 	"crypto/sha512"
+	"log"
 	"time"
 )
 
-var opsPerSec int // for useCPU
+var opsPerSec int = 4000 // for useCPU
 
 func oneOp() {
 	var b [sha512.Size]byte
@@ -15,6 +16,9 @@ func oneOp() {
 }
 
 func init() {
+	if opsPerSec != 0 {
+		return // already set
+	}
 	var d time.Duration
 	var ops int
 	for {
@@ -22,8 +26,9 @@ func init() {
 		oneOp()
 		d += time.Since(start)
 		ops++
-		if d > 100*time.Millisecond {
-			opsPerSec = ops * 10
+		if d > 1*time.Second {
+			opsPerSec = ops
+			log.Print("opsPerSec = ", opsPerSec)
 			return
 		}
 	}
