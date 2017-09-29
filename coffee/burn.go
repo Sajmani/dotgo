@@ -1,17 +1,17 @@
 package main
 
 import (
-	"crypto/sha512"
+	"hash/adler32"
 	"log"
 	"time"
 )
 
-var opsPerSec int = 4000 // for useCPU
+var opsPerSec int = 53884 // for useCPU
 
 func oneOp() {
-	var b [sha512.Size]byte
+	var b [64]byte
 	for j := 0; j < 500; j++ {
-		b = sha512.Sum512(b[:])
+		b[0] += byte(adler32.Checksum(b[:]))
 	}
 }
 

@@ -12,9 +12,10 @@ import (
 )
 
 var (
-	mode = flag.String("mode", "ideal", "one of ideal, ...")
-	dur  = flag.Duration("dur", 1*time.Second, "perf test duration")
-	par  = flag.Int("par", 1, "perf test parallelism")
+	mode      = flag.String("mode", "ideal", "one of ideal, ...")
+	dur       = flag.Duration("dur", 1*time.Second, "perf test duration")
+	par       = flag.Int("par", 1, "perf test parallelism")
+	traceFlag = flag.String("trace", "./trace.out", "execution trace file")
 )
 
 func idealBarista() {
@@ -37,7 +38,6 @@ func idealServe() {
 
 func main() {
 	rand.Seed(time.Now().UnixNano())
-	runtime.GOMAXPROCS(runtime.NumCPU())
 	flag.Parse()
 	if *par == 0 {
 		*par = runtime.GOMAXPROCS(0)
@@ -46,18 +46,26 @@ func main() {
 		" duration=", *dur,
 		" parallelism=", *par,
 		" GOMAXPROCS=", runtime.GOMAXPROCS(0))
-	traceFile, err := os.Create("./trace.out")
-	if err != nil {
-		panic(err)
-	}
-	trace.Start(traceFile)
-	defer func() {
-		trace.Stop()
-		if err := traceFile.Close(); err != nil {
+	if *traceFlag != "" {
+		traceFile, err := os.Create(*traceFlag)
+		if err != nil {
 			panic(err)
 		}
-	}()
+		trace.Start(traceFile)
+		defer func() {
+			trace.Stop()
+			if err := traceFile.Close(); err != nil {
+				panic(err)
+			}
+		}()
+	}
 	f := idealBarista
+	switch *mode {
+	case "ideal":
+		f = idealBarista
+	default:
+		panic(*mode)
+	}
 	res := perfTest(10000, *par, *dur, f)
 	fmt.Println(res)
 }

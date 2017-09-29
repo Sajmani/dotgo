@@ -1,26 +1,32 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"math/rand"
 	"sort"
 	"sync"
+	"syscall"
 	"time"
 )
+
+var requestQueue = flag.Int("rq", 0, "max length of the request queue")
 
 // perfTest runs f repeatedly in par goroutines until d elapses, then
 // returns a perfResult containing up to maxSamples uniformly selected
 // durations.
 func perfTest(maxSamples int, par int, d time.Duration, f func()) (res perfResult) {
 	// Pipeline: request generator -> workers -> sampler
+	var ru1, ru2 syscall.Rusage
+	syscall.Getrusage(syscall.RUSAGE_SELF, &ru1)
 	start := time.Now()
 
 	// Request generator runs until d elapses
-	requests := make(chan int)
+	requests := make(chan time.Time, *requestQueue)
 	go func() {
 		defer close(requests)
 		for time.Since(start) < d {
-			requests <- 0
+			requests <- time.Now()
 		}
 	}()
 
@@ -31,8 +37,7 @@ func perfTest(maxSamples int, par int, d time.Duration, f func()) (res perfResul
 	for i := 0; i < par; i++ {
 		go func() {
 			defer wg.Done()
-			for _ = range requests {
-				start := time.Now()
+			for start := range requests {
 				f()
 				durations <- time.Since(start)
 			}
@@ -49,7 +54,6 @@ func perfTest(maxSamples int, par int, d time.Duration, f func()) (res perfResul
 	res.par = par
 	for elapsed := range durations {
 		res.ops++
-		res.exectime += elapsed
 		// Decide whether to include elapsed in samples using
 		// https://en.wikipedia.org/wiki/Reservoir_sampling#Algorithm_R
 		if len(res.samples) < cap(res.samples) {
@@ -58,6 +62,9 @@ func perfTest(maxSamples int, par int, d time.Duration, f func()) (res perfResul
 			res.samples[j] = elapsed
 		}
 	}
+	syscall.Getrusage(syscall.RUSAGE_SELF, &ru2)
+	res.exectime = time.Duration(syscall.TimevalToNsec(ru2.Utime) -
+		syscall.TimevalToNsec(ru1.Utime))
 	res.walltime = time.Since(start)
 	return
 }
@@ -96,17 +103,13 @@ func (res perfResult) p99() time.Duration  { return res.samples[len(res.samples)
 func (res perfResult) p999() time.Duration { return res.samples[len(res.samples)*999/1000] }
 
 func (res perfResult) String() string {
-	return fmt.Sprintf(`%d ops, %.0f ops/sec, %s walltime, %s exectime, %2.f%% utilization (%2.f%% per thread)
-min:   %s
-p25:   %s
-p50:   %s
-p75:   %s
-p90:   %s
-p99:   %s
-p999:  %s
-max:   %s`,
-		res.ops, res.opsPerSec(), res.walltime, res.exectime,
+	return fmt.Sprintf(
+		"par,ops,thru,wall,exec,util,utpr,min,p25,p50,p75,p90,p99,p999,max\n"+
+			"%d,%d,%.0f,%s,%s,%2.f%%,%2.f%%,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f",
+		res.par, res.ops, res.opsPerSec(), res.walltime, res.exectime,
 		100*res.utilization(), 100*res.utilization()/float64(res.par),
-		res.min(), res.p25(), res.p50(), res.p75(),
-		res.p90(), res.p99(), res.p999(), res.max())
+		res.min().Seconds()*1000, res.p25().Seconds()*1000,
+		res.p50().Seconds()*1000, res.p75().Seconds()*1000,
+		res.p90().Seconds()*1000, res.p99().Seconds()*1000,
+		res.p999().Seconds()*1000, res.max().Seconds()*1000)
 }
