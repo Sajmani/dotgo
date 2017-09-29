@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"math/rand"
 	"sort"
@@ -10,19 +9,17 @@ import (
 	"time"
 )
 
-var requestQueue = flag.Int("rq", 0, "max length of the request queue")
-
 // perfTest runs f repeatedly in par goroutines until d elapses, then
 // returns a perfResult containing up to maxSamples uniformly selected
-// durations.
-func perfTest(maxSamples int, par int, d time.Duration, f func()) (res perfResult) {
+// durations.  Maxq specifies the max request queue length.
+func perfTest(maxSamples int, par, maxq int, d time.Duration, f func()) (res perfResult) {
 	// Pipeline: request generator -> workers -> sampler
 	var ru1, ru2 syscall.Rusage
 	syscall.Getrusage(syscall.RUSAGE_SELF, &ru1)
 	start := time.Now()
 
 	// Request generator runs until d elapses
-	requests := make(chan time.Time, *requestQueue)
+	requests := make(chan time.Time, maxq)
 	go func() {
 		defer close(requests)
 		for time.Since(start) < d {
@@ -52,6 +49,7 @@ func perfTest(maxSamples int, par int, d time.Duration, f func()) (res perfResul
 	defer res.finish()
 	res.samples = make([]time.Duration, 0, maxSamples)
 	res.par = par
+	res.maxq = maxq
 	for elapsed := range durations {
 		res.ops++
 		// Decide whether to include elapsed in samples using
@@ -74,6 +72,7 @@ func perfTest(maxSamples int, par int, d time.Duration, f func()) (res perfResul
 type perfResult struct {
 	ops      int
 	par      int
+	maxq     int
 	exectime time.Duration
 	walltime time.Duration
 	samples  []time.Duration
@@ -93,23 +92,23 @@ func (res *perfResult) finish() {
 	})
 }
 
-func (res perfResult) min() time.Duration  { return res.samples[0] }
-func (res perfResult) max() time.Duration  { return res.samples[len(res.samples)-1] }
-func (res perfResult) p25() time.Duration  { return res.samples[len(res.samples)/4] }
-func (res perfResult) p50() time.Duration  { return res.samples[len(res.samples)/2] }
-func (res perfResult) p75() time.Duration  { return res.samples[len(res.samples)*3/4] }
-func (res perfResult) p90() time.Duration  { return res.samples[len(res.samples)*9/10] }
-func (res perfResult) p99() time.Duration  { return res.samples[len(res.samples)*99/100] }
-func (res perfResult) p999() time.Duration { return res.samples[len(res.samples)*999/1000] }
+func (res perfResult) min() time.Duration { return res.samples[0] }
+func (res perfResult) max() time.Duration { return res.samples[len(res.samples)-1] }
+func (res perfResult) p25() time.Duration { return res.samples[len(res.samples)/4] }
+func (res perfResult) p50() time.Duration { return res.samples[len(res.samples)/2] }
+func (res perfResult) p75() time.Duration { return res.samples[len(res.samples)*3/4] }
+func (res perfResult) p90() time.Duration { return res.samples[len(res.samples)*9/10] }
+func (res perfResult) p99() time.Duration { return res.samples[len(res.samples)*99/100] }
+
+const perfResultHeader = "par,maxq,ops,thru,wall,exec,util,upar,min,p25,p50,p75,p90,p99,max"
 
 func (res perfResult) String() string {
 	return fmt.Sprintf(
-		"par,ops,thru,wall,exec,util,utpr,min,p25,p50,p75,p90,p99,p999,max\n"+
-			"%d,%d,%.0f,%s,%s,%2.f%%,%2.f%%,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f",
-		res.par, res.ops, res.opsPerSec(), res.walltime, res.exectime,
+		"%d,%d,%d,%.0f,%s,%s,%2.f%%,%2.f%%,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f",
+		res.par, res.maxq, res.ops, res.opsPerSec(), res.walltime, res.exectime,
 		100*res.utilization(), 100*res.utilization()/float64(res.par),
 		res.min().Seconds()*1000, res.p25().Seconds()*1000,
 		res.p50().Seconds()*1000, res.p75().Seconds()*1000,
 		res.p90().Seconds()*1000, res.p99().Seconds()*1000,
-		res.p999().Seconds()*1000, res.max().Seconds()*1000)
+		res.max().Seconds()*1000)
 }
