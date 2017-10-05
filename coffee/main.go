@@ -229,8 +229,8 @@ func (p *splitPipeline) brew() {
 	o := splitOrder{make(chan int), make(chan int)}
 	p.coffeeOrders <- o
 	p.milkOrders <- o
+	<-o.milk // receive in reverse order of send to avoid deadlock
 	<-o.coffee
-	<-o.milk
 }
 
 func (p *splitPipeline) grinder() {
@@ -313,14 +313,14 @@ func main() {
 	default:
 		log.Panicf("unknown mode: %s", *mode)
 	}
-	fmt.Println(perfResultHeader)
+	fmt.Println("mode," + perfResultHeader)
 	for _, par := range pars {
 		if par == 0 {
 			par = runtime.GOMAXPROCS(0)
 		}
 		for _, maxq := range maxqs {
 			res := perfTest(10000, par, maxq, *dur, f)
-			fmt.Println(res)
+			fmt.Println(*mode + "," + res.String())
 		}
 	}
 }
