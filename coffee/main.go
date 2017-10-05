@@ -226,7 +226,7 @@ func newSplitPipeline(buffer int) *splitPipeline {
 }
 
 func (p *splitPipeline) brew() {
-	o := splitOrder{make(chan int), make(chan int)}
+	o := splitOrder{make(chan int, 1), make(chan int, 1)}
 	p.coffeeOrders <- o
 	p.milkOrders <- o
 	<-o.coffee
