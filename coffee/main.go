@@ -49,117 +49,160 @@ func init() {
 	flag.Var(&maxqs, "maxq", "max length of the request queue")
 }
 
-// Ideal case: no contention
-func idealBrew() {
-	useCPU(1 * time.Millisecond)
+// Shared state, requiring synchronization
+var grindCount, pressCount, steamCount int
+
+// Ideal case: no contention (fails the race detector with par > 1)
+func idealBrew() latte {
+	grounds := grindCoffee(&grindCount)
+	coffee := makeEspresso(&pressCount, grounds)
+	milk := steamMilk(&steamCount)
+	return makeLatte(coffee, milk)
 }
+
+func grindCoffee(count *int) grounds {
+	*count++
+	useCPU(333 * time.Microsecond)
+	return grounds(0)
+}
+
+func makeEspresso(count *int, grounds grounds) coffee {
+	*count++
+	useCPU(334 * time.Microsecond)
+	return coffee(grounds)
+}
+
+func steamMilk(count *int) milk {
+	*count++
+	useCPU(333 * time.Microsecond)
+	return milk(0)
+}
+
+func makeLatte(coffee coffee, milk milk) latte {
+	return latte(int(coffee) + int(milk))
+}
+
+type (
+	grounds int
+	coffee  int
+	milk    int
+	latte   int
+)
 
 // Locking case: complete contention on a single set of equipent.
 var equipment sync.Mutex
 
-func lockingBrew() {
+func lockingBrew() latte {
 	equipment.Lock()
-	grindCoffee()
-	makeEspresso()
-	steamMilk()
-	equipment.Unlock()
-}
-
-func grindCoffee() {
-	useCPU(333 * time.Microsecond)
-}
-
-func makeEspresso() {
-	useCPU(334 * time.Microsecond)
-}
-
-func steamMilk() {
-	useCPU(333 * time.Microsecond)
+	defer equipment.Unlock()
+	grounds := grindCoffee(&grindCount)
+	coffee := makeEspresso(&pressCount, grounds)
+	milk := steamMilk(&steamCount)
+	return makeLatte(coffee, milk)
 }
 
 // Fine-grain locking reduces contention.
 var grinder, espressoMachine, steamer sync.Mutex
 
-func fineLockingBrew() {
-	lockingGrind()
-	lockingPress()
-	lockingSteam()
+func fineLockingBrew() latte {
+	grounds := lockingGrind()
+	coffee := lockingPress(grounds)
+	milk := lockingSteam()
+	return makeLatte(coffee, milk)
 }
 
-func lockingGrind() {
+func lockingGrind() grounds {
 	grinder.Lock()
-	grindCoffee()
-	grinder.Unlock()
+	defer grinder.Unlock()
+	return grindCoffee(&grindCount)
 }
 
-func lockingPress() {
+func lockingPress(grounds grounds) coffee {
 	espressoMachine.Lock()
-	makeEspresso()
-	espressoMachine.Unlock()
+	defer espressoMachine.Unlock()
+	return makeEspresso(&pressCount, grounds)
 }
 
-func lockingSteam() {
+func lockingSteam() milk {
 	steamer.Lock()
-	steamMilk()
-	steamer.Unlock()
-}
-
-// Multiple machines reduce contention.
-var grinders, espressoMachines, steamers chan int
-
-func multiBrew() {
-	multiGrind()
-	multiPress()
-	multiSteam()
-}
-
-func multiGrind() {
-	grinders <- 0
-	grindCoffee()
-	<-grinders
-}
-
-func multiPress() {
-	espressoMachines <- 0
-	makeEspresso()
-	<-espressoMachines
-}
-
-func multiSteam() {
-	steamers <- 0
-	steamMilk()
-	<-steamers
+	defer steamer.Unlock()
+	return steamMilk(&steamCount)
 }
 
 // Paralellizing operations can help, provided there's available CPU.
 // Can steam milk while grinding & pressing, but this loses to
 // fine-grain locking when all CPUs utilized.
-func parallelSteaming() {
-	milk := make(chan int)
+func parallelSteaming() latte {
+	c := make(chan milk)
 	go func() {
-		lockingSteam()
-		milk <- 0
+		c <- lockingSteam()
 	}()
-	lockingGrind()
-	lockingPress()
-	<-milk
+	grounds := lockingGrind()
+	coffee := lockingPress(grounds)
+	milk := <-c
+	return makeLatte(coffee, milk)
+}
+
+// Multiple machines reduce contention.
+var grinders, espressoMachines, steamers chan int
+
+// newZeroes returns a channel containing n zeroes in its buffer.
+func newZeroes(n int) chan int {
+	c := make(chan int, n)
+	for i := 0; i < n; i++ {
+		c <- 0
+	}
+	return c
+}
+
+func multiBrew() latte {
+	grounds := multiGrind()
+	coffee := multiPress(grounds)
+	milk := multiSteam()
+	return makeLatte(coffee, milk)
+}
+
+func multiGrind() grounds {
+	count := <-grinders
+	grounds := grindCoffee(&count)
+	grinders <- count
+	return grounds
+}
+
+func multiPress(grounds grounds) coffee {
+	count := <-espressoMachines
+	coffee := makeEspresso(&count, grounds)
+	espressoMachines <- count
+	return coffee
+}
+
+func multiSteam() milk {
+	count := <-steamers
+	milk := steamMilk(&count)
+	steamers <- count
+	return milk
 }
 
 // Linear pipeline
 type order struct {
-	latte chan int
+	grounds grounds
+	coffee  coffee
+	milk    chan milk
 }
+
 type linearPipeline struct {
-	orders, grounds, coffee chan order
-	done                    chan int
+	orders            chan order
+	ordersWithGrounds chan order
+	ordersWithCoffee  chan order
+	done              chan int
 }
 
 func newLinearPipeline(buffer int) *linearPipeline {
 	p := &linearPipeline{
-		orders:  make(chan order, buffer),
-		grounds: make(chan order, buffer),
-		coffee:  make(chan order, buffer),
-		done:    make(chan int),
+		orders:            make(chan order, buffer),
+		ordersWithGrounds: make(chan order, buffer),
+		ordersWithCoffee:  make(chan order, buffer),
+		done:              make(chan int),
 	}
 	go p.grinder()
 	go p.presser()
@@ -167,32 +210,32 @@ func newLinearPipeline(buffer int) *linearPipeline {
 	return p
 }
 
-func (p *linearPipeline) brew() {
-	o := order{make(chan int)}
+func (p *linearPipeline) brew() latte {
+	o := order{milk: make(chan milk, 1)}
 	p.orders <- o
-	<-o.latte
+	milk := <-o.milk
+	return makeLatte(o.coffee, milk)
 }
 
 func (p *linearPipeline) grinder() {
 	for o := range p.orders {
-		grindCoffee()
-		p.grounds <- o
+		o.grounds = grindCoffee(&grindCount)
+		p.ordersWithGrounds <- o
 	}
-	close(p.grounds)
+	close(p.ordersWithGrounds)
 }
 
 func (p *linearPipeline) presser() {
-	for o := range p.grounds {
-		makeEspresso()
-		p.coffee <- o
+	for o := range p.ordersWithGrounds {
+		o.coffee = makeEspresso(&pressCount, o.grounds)
+		p.ordersWithCoffee <- o
 	}
-	close(p.coffee)
+	close(p.ordersWithCoffee)
 }
 
 func (p *linearPipeline) steamer() {
-	for o := range p.coffee {
-		steamMilk()
-		o.latte <- 0
+	for o := range p.ordersWithCoffee {
+		o.milk <- steamMilk(&steamCount)
 	}
 	close(p.done)
 }
@@ -204,20 +247,22 @@ func (p *linearPipeline) close() {
 
 // Split pipeline
 type splitOrder struct {
-	coffee, milk chan int
+	grounds grounds
+	coffee  chan coffee
+	milk    chan milk
 }
 type splitPipeline struct {
-	coffeeOrders, milkOrders, grounds chan splitOrder
-	presserDone, steamerDone          chan int
+	coffeeOrders, milkOrders, ordersWithGrounds chan splitOrder
+	presserDone, steamerDone                    chan int
 }
 
 func newSplitPipeline(buffer int) *splitPipeline {
 	p := &splitPipeline{
-		coffeeOrders: make(chan splitOrder, buffer),
-		grounds:      make(chan splitOrder, buffer),
-		milkOrders:   make(chan splitOrder, buffer),
-		presserDone:  make(chan int),
-		steamerDone:  make(chan int),
+		coffeeOrders:      make(chan splitOrder, buffer),
+		ordersWithGrounds: make(chan splitOrder, buffer),
+		milkOrders:        make(chan splitOrder, buffer),
+		presserDone:       make(chan int),
+		steamerDone:       make(chan int),
 	}
 	go p.grinder()
 	go p.presser()
@@ -225,34 +270,36 @@ func newSplitPipeline(buffer int) *splitPipeline {
 	return p
 }
 
-func (p *splitPipeline) brew() {
-	o := splitOrder{make(chan int, 1), make(chan int, 1)}
+func (p *splitPipeline) brew() latte {
+	o := splitOrder{
+		coffee: make(chan coffee, 1),
+		milk:   make(chan milk, 1),
+	}
 	p.coffeeOrders <- o
 	p.milkOrders <- o
-	<-o.coffee
-	<-o.milk
+	milk := <-o.milk // receive in reverse order of send to avoid deadlock
+	coffee := <-o.coffee
+	return makeLatte(coffee, milk)
 }
 
 func (p *splitPipeline) grinder() {
 	for o := range p.coffeeOrders {
-		grindCoffee()
-		p.grounds <- o
+		o.grounds = grindCoffee(&grindCount)
+		p.ordersWithGrounds <- o
 	}
-	close(p.grounds)
+	close(p.ordersWithGrounds)
 }
 
 func (p *splitPipeline) presser() {
-	for o := range p.grounds {
-		makeEspresso()
-		o.coffee <- 0
+	for o := range p.ordersWithGrounds {
+		o.coffee <- makeEspresso(&pressCount, o.grounds)
 	}
 	close(p.presserDone)
 }
 
 func (p *splitPipeline) steamer() {
 	for o := range p.milkOrders {
-		steamMilk()
-		o.milk <- 0
+		o.milk <- steamMilk(&steamCount)
 	}
 	close(p.steamerDone)
 }
@@ -286,7 +333,7 @@ func main() {
 			}
 		}()
 	}
-	var f func()
+	var f func() latte
 	var n int
 	switch {
 	case *mode == "ideal":
@@ -294,9 +341,9 @@ func main() {
 	case *mode == "locking":
 		f = lockingBrew
 	case modeParam(*mode, "multi-", &n):
-		grinders = make(chan int, n)
-		espressoMachines = make(chan int, n)
-		steamers = make(chan int, n)
+		grinders = newZeroes(n)
+		espressoMachines = newZeroes(n)
+		steamers = newZeroes(n)
 		f = multiBrew
 	case *mode == "finelocking":
 		f = fineLockingBrew
@@ -319,7 +366,7 @@ func main() {
 			par = runtime.GOMAXPROCS(0)
 		}
 		for _, maxq := range maxqs {
-			res := perfTest(10000, par, maxq, *dur, f)
+			res := perfTest(10000, par, maxq, *dur, func() { f() })
 			fmt.Println(res)
 		}
 	}
