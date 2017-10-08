@@ -1,3 +1,11 @@
+// The coffee command simulates a small parallel pipeline and outputs CSV.
+//
+// The pipeline consists of three stages: grinding coffee beans,
+// preparing espresso, and steaming milk.  Each stage contends on the
+// respective machine (grinder, espresso machine, steamer).
+//
+// This simulation reports throughput, latency, and utilization.
+// It can also create an execution trace with the --trace flag.
 package main
 
 import (
@@ -13,6 +21,28 @@ import (
 	"sync"
 	"time"
 )
+
+var (
+	mode = flag.String("mode", "ideal", `comma-separated list of modes:
+ideal: no synchronization, no contention overhead.  Fails the race detector.
+locking: one lock, maximal contention.
+finelocking: one lock per machine, permitting greater parallelism.
+parsteam: finelocking with steaming happening in parallel with the other stages.
+linearpipe-N: a pipeline with one goroutine per machine.
+splitpipe-N: a pipeline with the steamer stage happening in parallel with the other stages.
+multi-N: finelocking but with N copies of each machine.
+`)
+	duration  = flag.Duration("dur", 1*time.Second, "perf test duration")
+	interval  = flag.Duration("interval", 0, "perf test request interval")
+	traceFlag = flag.String("trace", "", "execution trace file, e.g., ./trace.out")
+	pars      intList
+	maxqs     intList
+)
+
+func init() {
+	flag.Var(&pars, "par", "comma-separated list of perf test parallelism (how many brews to run in parallel)")
+	flag.Var(&maxqs, "maxq", "comma-separated max lengths of the request queue (how many calls to queue up)")
+}
 
 type intList []int
 
@@ -36,21 +66,16 @@ func (il *intList) String() string {
 	return strings.Join(ss, ",")
 }
 
-var (
-	mode      = flag.String("mode", "ideal", "comma-separated list of modes: ideal, locking, multi-N, finelocking, parsteam, linearpipe-N, splitpipe-N")
-	dur       = flag.Duration("dur", 1*time.Second, "perf test duration")
-	traceFlag = flag.String("trace", "", "execution trace file, e.g., ./trace.out")
-	pars      intList
-	maxqs     intList
-)
-
-func init() {
-	flag.Var(&pars, "par", "comma-separated list of perf test parallelisms")
-	flag.Var(&maxqs, "maxq", "comma-separated max lengths of the request queue")
-}
-
 // Shared state, requiring synchronization
 var grindCount, pressCount, steamCount int
+
+// Named types for the pipeline elements.
+type (
+	grounds int
+	coffee  int
+	milk    int
+	latte   int
+)
 
 // Ideal case: no contention (fails the race detector with par > 1)
 func idealBrew() latte {
@@ -60,34 +85,31 @@ func idealBrew() latte {
 	return makeLatte(coffee, milk)
 }
 
+// Simulate one millisecond of prep time.
+
 func grindCoffee(count *int) grounds {
 	*count++
-	useCPU(333 * time.Microsecond)
+	useCPU(250 * time.Microsecond)
 	return grounds(0)
 }
 
 func makeEspresso(count *int, grounds grounds) coffee {
 	*count++
-	useCPU(334 * time.Microsecond)
+	useCPU(250 * time.Microsecond)
 	return coffee(grounds)
 }
 
 func steamMilk(count *int) milk {
 	*count++
-	useCPU(333 * time.Microsecond)
+	useCPU(250 * time.Microsecond)
 	return milk(0)
 }
 
 func makeLatte(coffee coffee, milk milk) latte {
+	// No shared state to contend on.
+	useCPU(250 * time.Microsecond)
 	return latte(int(coffee) + int(milk))
 }
-
-type (
-	grounds int
-	coffee  int
-	milk    int
-	latte   int
-)
 
 // Locking case: complete contention on a single set of equipent.
 var equipment sync.Mutex
@@ -338,7 +360,9 @@ func main() {
 			}
 		}()
 	}
-	fmt.Println("mode," + perfResultHeader)
+	// Run all combinations of modes, parallelisms, and maxqs.
+	// Print output as CSV.
+	fmt.Println(perfArgHeader + "," + perfResultHeader)
 	for _, mode := range modes {
 		f, close := modeFunc(mode)
 		for _, par := range pars {
@@ -346,8 +370,15 @@ func main() {
 				par = runtime.GOMAXPROCS(0)
 			}
 			for _, maxq := range maxqs {
-				res := perfTest(10000, par, maxq, *dur, func() { f() })
-				fmt.Println(mode + "," + res.String())
+				arg := perfArg{
+					mode:     mode,
+					par:      par,
+					maxq:     maxq,
+					dur:      *duration,
+					interval: *interval,
+				}
+				res := perfTest(arg, func() { f() })
+				fmt.Println(arg.String() + "," + res.String())
 			}
 		}
 		if close != nil {
