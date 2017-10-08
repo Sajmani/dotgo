@@ -38,10 +38,12 @@ func perfTest(arg perfArg, f func()) (res perfResult) {
 	start := time.Now()
 
 	// Generate requests until arg.dur elapses
-	stop := time.After(arg.dur)
-	var send <-chan time.Time
+	stop := time.NewTimer(arg.dur)
+	defer stop.Stop()
+	var send *time.Ticker
 	if arg.interval > 0 {
-		send = time.Tick(arg.interval)
+		send = time.NewTicker(arg.interval)
+		defer send.Stop()
 	}
 	requests := make(chan time.Time, arg.maxq)
 	go func() {
@@ -50,16 +52,16 @@ func perfTest(arg perfArg, f func()) (res perfResult) {
 			if send == nil {
 				// No request interval: send whenever the queue has space.
 				select {
-				case <-stop:
+				case <-stop.C:
 					return
 				case requests <- time.Now():
 				}
 			} else {
 				// Attempt to send a request periodically, drop if queue is full.
 				select {
-				case <-stop:
+				case <-stop.C:
 					return
-				case <-send:
+				case <-send.C:
 				}
 				select {
 				case requests <- time.Now():
