@@ -98,17 +98,18 @@ func (res perfResult) p25() time.Duration { return res.samples[len(res.samples)/
 func (res perfResult) p50() time.Duration { return res.samples[len(res.samples)/2] }
 func (res perfResult) p75() time.Duration { return res.samples[len(res.samples)*3/4] }
 func (res perfResult) p90() time.Duration { return res.samples[len(res.samples)*9/10] }
+func (res perfResult) p95() time.Duration { return res.samples[len(res.samples)*95/100] }
 func (res perfResult) p99() time.Duration { return res.samples[len(res.samples)*99/100] }
 
-const perfResultHeader = "par,maxq,ops,thru,wall,exec,util,upar,min,p25,p50,p75,p90,p99,max"
+const perfResultHeader = "par,maxq,ops,thru,wall,exec,util,upar,min,p25,p50,p75,p90,p95,p99,max"
 
 func (res perfResult) String() string {
 	return fmt.Sprintf(
-		"%d,%d,%d,%.0f,%s,%s,%2.f%%,%2.f%%,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f",
+		"%d,%d,%d,%.0f,%s,%s,%2.f%%,%2.f%%,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f",
 		res.par, res.maxq, res.ops, res.opsPerSec(), res.walltime, res.exectime,
 		100*res.utilization(), 100*res.utilization()/float64(res.par),
 		res.min().Seconds()*1000, res.p25().Seconds()*1000,
 		res.p50().Seconds()*1000, res.p75().Seconds()*1000,
-		res.p90().Seconds()*1000, res.p99().Seconds()*1000,
-		res.max().Seconds()*1000)
+		res.p90().Seconds()*1000, res.p95().Seconds()*1000,
+		res.p99().Seconds()*1000, res.max().Seconds()*1000)
 }

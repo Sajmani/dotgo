@@ -37,16 +37,16 @@ func (il *intList) String() string {
 }
 
 var (
-	mode      = flag.String("mode", "ideal", "one of ideal, locking, multi-N, finelocking, parsteam, linearpipe-N, splitpipe-N")
+	mode      = flag.String("mode", "ideal", "comma-separated list of modes: ideal, locking, multi-N, finelocking, parsteam, linearpipe-N, splitpipe-N")
 	dur       = flag.Duration("dur", 1*time.Second, "perf test duration")
-	traceFlag = flag.String("trace", "./trace.out", "execution trace file")
+	traceFlag = flag.String("trace", "", "execution trace file, e.g., ./trace.out")
 	pars      intList
 	maxqs     intList
 )
 
 func init() {
-	flag.Var(&pars, "par", "perf test parallelism")
-	flag.Var(&maxqs, "maxq", "max length of the request queue")
+	flag.Var(&pars, "par", "comma-separated list of perf test parallelisms")
+	flag.Var(&maxqs, "maxq", "comma-separated max lengths of the request queue")
 }
 
 // Shared state, requiring synchronization
@@ -313,13 +313,18 @@ func (p *splitPipeline) close() {
 
 func main() {
 	rand.Seed(time.Now().UnixNano())
+	log.Print("GOMAXPROCS=", runtime.GOMAXPROCS(0))
 	flag.Parse()
-	if len(pars) == 0 || len(maxqs) == 0 {
-		log.Print("need at least one --par and --maxq")
-		os.Exit(1)
+	if len(pars) == 0 {
+		pars = []int{1}
 	}
-	log.Print("mode=", *mode,
-		" GOMAXPROCS=", runtime.GOMAXPROCS(0))
+	if len(maxqs) == 0 {
+		maxqs = []int{0}
+	}
+	modes := strings.Split(*mode, ",")
+	if len(modes) == 0 {
+		modes = []string{"ideal"}
+	}
 	if *traceFlag != "" {
 		traceFile, err := os.Create(*traceFlag)
 		if err != nil {
@@ -333,43 +338,51 @@ func main() {
 			}
 		}()
 	}
-	var f func() latte
+	fmt.Println("mode," + perfResultHeader)
+	for _, mode := range modes {
+		f, close := modeFunc(mode)
+		for _, par := range pars {
+			if par == 0 {
+				par = runtime.GOMAXPROCS(0)
+			}
+			for _, maxq := range maxqs {
+				res := perfTest(10000, par, maxq, *dur, func() { f() })
+				fmt.Println(mode + "," + res.String())
+			}
+		}
+		if close != nil {
+			close()
+		}
+	}
+}
+
+func modeFunc(mode string) (func() latte, func()) {
 	var n int
 	switch {
-	case *mode == "ideal":
-		f = idealBrew
-	case *mode == "locking":
-		f = lockingBrew
-	case modeParam(*mode, "multi-", &n):
+	case mode == "ideal":
+		return idealBrew, nil
+	case mode == "locking":
+		return lockingBrew, nil
+	case modeParam(mode, "multi-", &n):
 		grinders = newZeroes(n)
 		espressoMachines = newZeroes(n)
 		steamers = newZeroes(n)
-		f = multiBrew
-	case *mode == "finelocking":
-		f = fineLockingBrew
-	case *mode == "parsteam":
-		f = parallelSteaming
-	case modeParam(*mode, "linearpipe-", &n):
+		return multiBrew, func() {
+			grinders, espressoMachines, steamers = nil, nil, nil
+		}
+	case mode == "finelocking":
+		return fineLockingBrew, nil
+	case mode == "parsteam":
+		return parallelSteaming, nil
+	case modeParam(mode, "linearpipe-", &n):
 		p := newLinearPipeline(n)
-		defer p.close()
-		f = p.brew
-	case modeParam(*mode, "splitpipe-", &n):
+		return p.brew, p.close
+	case modeParam(mode, "splitpipe-", &n):
 		p := newSplitPipeline(n)
-		defer p.close()
-		f = p.brew
-	default:
-		log.Panicf("unknown mode: %s", *mode)
+		return p.brew, p.close
 	}
-	fmt.Println(perfResultHeader)
-	for _, par := range pars {
-		if par == 0 {
-			par = runtime.GOMAXPROCS(0)
-		}
-		for _, maxq := range maxqs {
-			res := perfTest(10000, par, maxq, *dur, func() { f() })
-			fmt.Println(res)
-		}
-	}
+	log.Panicf("unknown mode: %s", mode)
+	return nil, nil
 }
 
 func modeParam(mode, prefix string, n *int) bool {
