@@ -31,6 +31,7 @@ parsteam: finelocking with steaming happening in parallel with the other stages.
 linearpipe-N: a pipeline with one goroutine per machine.
 splitpipe-N: a pipeline with the steamer stage happening in parallel with the other stages.
 multi-N: finelocking but with N copies of each machine.
+multipipe-N: N copies of linearpipe.
 `)
 	duration  = flag.Duration("dur", 1*time.Second, "perf test duration")
 	interval  = flag.Duration("interval", 0, "perf test request interval")
@@ -333,6 +334,37 @@ func (p *splitPipeline) close() {
 	<-p.steamerDone
 }
 
+// Multiple copies of linearPipeline, like multiple coffee shops.
+type multiPipeline struct {
+	pipes chan *linearPipeline
+}
+
+func newMultiPipeline(n int) *multiPipeline {
+	p := &multiPipeline{
+		pipes: make(chan *linearPipeline, n),
+	}
+	for i := 0; i < n; i++ {
+		p.pipes <- newLinearPipeline(0) // no buffering
+	}
+	return p
+}
+
+func (p *multiPipeline) brew() latte {
+	lp := <-p.pipes
+	o := order{milk: make(chan milk, 1)}
+	lp.orders <- o
+	p.pipes <- lp    // release the pipeline for other brew calls
+	milk := <-o.milk // THEN wait for order to complete
+	return makeLatte(o.coffee, milk)
+}
+
+func (p *multiPipeline) close() {
+	close(p.pipes)
+	for lp := range p.pipes {
+		lp.close()
+	}
+}
+
 func main() {
 	rand.Seed(time.Now().UnixNano())
 	log.Print("GOMAXPROCS=", runtime.GOMAXPROCS(0))
@@ -410,6 +442,9 @@ func modeFunc(mode string) (func() latte, func()) {
 		return p.brew, p.close
 	case modeParam(mode, "splitpipe-", &n):
 		p := newSplitPipeline(n)
+		return p.brew, p.close
+	case modeParam(mode, "multipipe-", &n):
+		p := newMultiPipeline(n)
 		return p.brew, p.close
 	}
 	log.Panicf("unknown mode: %s", mode)

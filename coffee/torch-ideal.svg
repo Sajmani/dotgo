@@ -330,53 +330,45 @@
 ]]>
 </script>
 <rect x="0.0" y="0" width="1200.0" height="134.0" fill="url(#background)"  />
-<text text-anchor="middle" x="600.00" y="24" font-size="17" font-family="Verdana" fill="rgb(0,0,0)"  >ideal</text>
+<text text-anchor="middle" x="600.00" y="24" font-size="17" font-family="Verdana" fill="rgb(0,0,0)"  >Flame Graph</text>
 <text text-anchor="" x="10.00" y="117" font-size="12" font-family="Verdana" fill="rgb(0,0,0)" id="details" > </text>
 <text text-anchor="" x="10.00" y="24" font-size="12" font-family="Verdana" fill="rgb(0,0,0)" id="unzoom" onclick="unzoom()" style="opacity:0.0;cursor:pointer" >Reset Zoom</text>
 <text text-anchor="" x="1090.00" y="24" font-size="12" font-family="Verdana" fill="rgb(0,0,0)" id="search" onmouseover="searchover()" onmouseout="searchout()" onclick="search_prompt()" style="opacity:0.1;cursor:pointer" >Search</text>
 <text text-anchor="" x="1090.00" y="117" font-size="12" font-family="Verdana" fill="rgb(0,0,0)" id="matched" > </text>
 <g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
-<title>runtime.chanrecv2 (2,580 samples, 33.52%)</title><rect x="553.5" y="53" width="395.5" height="15.0" fill="rgb(237,36,22)" rx="2" ry="2" />
-<text text-anchor="" x="556.47" y="63.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >runtime.chanrecv2</text>
-</g>
-<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
-<title>sync.(*WaitGroup).Wait (1 samples, 0.01%)</title><rect x="1189.8" y="53" width="0.2" height="15.0" fill="rgb(209,187,13)" rx="2" ry="2" />
-<text text-anchor="" x="1192.85" y="63.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
-</g>
-<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
-<title>all (7,697 samples, 100%)</title><rect x="10.0" y="85" width="1180.0" height="15.0" fill="rgb(224,92,36)" rx="2" ry="2" />
+<title>all (24,323 samples, 100%)</title><rect x="10.0" y="85" width="1180.0" height="15.0" fill="rgb(245,73,4)" rx="2" ry="2" />
 <text text-anchor="" x="13.00" y="95.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
 </g>
 <g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
-<title>main.main (2,276 samples, 29.57%)</title><rect x="10.0" y="69" width="348.9" height="15.0" fill="rgb(224,24,42)" rx="2" ry="2" />
-<text text-anchor="" x="13.00" y="79.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >main.main</text>
-</g>
-<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
-<title>runtime.chansend1 (1,571 samples, 20.41%)</title><rect x="949.0" y="53" width="240.8" height="15.0" fill="rgb(243,104,54)" rx="2" ry="2" />
-<text text-anchor="" x="952.00" y="63.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >runtime.chansend1</text>
-</g>
-<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
-<title>runtime.chansend1 (1,269 samples, 16.49%)</title><rect x="358.9" y="53" width="194.6" height="15.0" fill="rgb(219,181,7)" rx="2" ry="2" />
-<text text-anchor="" x="361.93" y="63.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >runtime.chansend1</text>
-</g>
-<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
-<title>runtime.chanrecv2 (2,276 samples, 29.57%)</title><rect x="10.0" y="37" width="348.9" height="15.0" fill="rgb(248,217,23)" rx="2" ry="2" />
-<text text-anchor="" x="13.00" y="47.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >runtime.chanrecv2</text>
-</g>
-<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
-<title>main.perfTest.func1 (1,269 samples, 16.49%)</title><rect x="358.9" y="69" width="194.6" height="15.0" fill="rgb(222,103,6)" rx="2" ry="2" />
-<text text-anchor="" x="361.93" y="79.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >main.perfTest.func1</text>
-</g>
-<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
-<title>main.perfTest (2,276 samples, 29.57%)</title><rect x="10.0" y="53" width="348.9" height="15.0" fill="rgb(233,150,43)" rx="2" ry="2" />
+<title>main.perfTest (6,936 samples, 28.52%)</title><rect x="10.0" y="53" width="336.5" height="15.0" fill="rgb(213,49,45)" rx="2" ry="2" />
 <text text-anchor="" x="13.00" y="63.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >main.perfTest</text>
 </g>
 <g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
-<title>main.perfTest.func2 (4,151 samples, 53.93%)</title><rect x="553.5" y="69" width="636.3" height="15.0" fill="rgb(210,166,9)" rx="2" ry="2" />
-<text text-anchor="" x="556.47" y="79.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >main.perfTest.func2</text>
+<title>main.perfTest.func1 (3,969 samples, 16.32%)</title><rect x="346.5" y="69" width="192.5" height="15.0" fill="rgb(251,0,26)" rx="2" ry="2" />
+<text text-anchor="" x="349.49" y="79.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >main.perfTest.func1</text>
 </g>
 <g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
-<title>main.perfTest.func3 (1 samples, 0.01%)</title><rect x="1189.8" y="69" width="0.2" height="15.0" fill="rgb(243,196,35)" rx="2" ry="2" />
-<text text-anchor="" x="1192.85" y="79.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+<title>runtime.chansend1 (5,224 samples, 21.48%)</title><rect x="936.5" y="53" width="253.5" height="15.0" fill="rgb(241,82,48)" rx="2" ry="2" />
+<text text-anchor="" x="939.52" y="63.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >runtime.chansend1</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>main.main (6,936 samples, 28.52%)</title><rect x="10.0" y="69" width="336.5" height="15.0" fill="rgb(225,70,3)" rx="2" ry="2" />
+<text text-anchor="" x="13.00" y="79.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >main.main</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>runtime.chanrecv2 (8,193 samples, 33.68%)</title><rect x="539.0" y="53" width="397.5" height="15.0" fill="rgb(245,31,4)" rx="2" ry="2" />
+<text text-anchor="" x="542.04" y="63.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >runtime.chanrecv2</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>main.perfTest.func2 (13,417 samples, 55.16%)</title><rect x="539.0" y="69" width="651.0" height="15.0" fill="rgb(244,145,30)" rx="2" ry="2" />
+<text text-anchor="" x="542.04" y="79.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >main.perfTest.func2</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>runtime.chanrecv2 (6,936 samples, 28.52%)</title><rect x="10.0" y="37" width="336.5" height="15.0" fill="rgb(232,39,3)" rx="2" ry="2" />
+<text text-anchor="" x="13.00" y="47.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >runtime.chanrecv2</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>runtime.selectgo (3,969 samples, 16.32%)</title><rect x="346.5" y="53" width="192.5" height="15.0" fill="rgb(246,221,5)" rx="2" ry="2" />
+<text text-anchor="" x="349.49" y="63.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >runtime.selectgo</text>
 </g>
 </svg>

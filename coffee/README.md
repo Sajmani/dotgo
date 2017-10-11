@@ -1,5 +1,25 @@
-foreach mode ( ideal locking finelocking multi-2 multi-4 multi-8 parsteam linearpipe-0 linearpipe-1 linearpipe-10 splitpipe-0 splitpipe-1 splitpipe-10 )
-go run main.go burn.go perf.go --dur=1s --par=8 --maxq=0 --trace=./trace-$mode.out -mode=$mode
+sameer-macbookpro% go run main.go burn.go perf.go --mode=ideal,finelocking,parsteam,linearpipe-0,linearpipe-10,splitpipe-0,splitpipe-10,multi-1,multi-2,multi-4,multi-8,multipipe-1,multipipe-2,multipipe-4,multipipe-8 --par=8 --dur=3s
+2017/10/11 08:37:26 opsPerSec = 54669
+2017/10/11 08:37:26 GOMAXPROCS=8
+mode,par,maxprocs,maxq,dur,interval,ops,drops,thru,dthr,wall,exec,util,upar,min,p05,p25,p50,p75,p90,p95,p99,max
+ideal,8,8,0,3s,0s,12353,0,4111,0,3.005109033s,20.756464s,691%,86%,0.948,1.557,1.717,1.841,2.108,2.384,2.562,2.975,5.181
+finelocking,8,8,0,3s,0s,9906,0,3299,0,3.002834688s,10.343623s,344%,43%,0.948,0.950,1.462,2.466,2.848,3.671,4.244,11.782,94.570
+parsteam,8,8,0,3s,0s,10308,0,3433,0,3.002484521s,11.156106s,372%,46%,0.715,1.305,2.242,2.476,2.748,3.363,4.100,5.530,11.943
+linearpipe-0,8,8,0,3s,0s,9395,0,3129,0,3.002665773s,10.130859s,337%,42%,1.197,2.604,2.739,2.848,2.974,3.133,3.233,3.426,3.828
+linearpipe-10,8,8,0,3s,0s,9961,0,3318,0,3.002377254s,10.631779s,354%,44%,0.950,2.117,2.609,2.670,2.783,3.068,3.252,3.834,6.537
+splitpipe-0,8,8,0,3s,0s,9689,0,3227,0,3.002184688s,10.480432s,349%,44%,0.815,2.551,2.681,2.774,2.873,2.965,3.042,3.334,4.049
+splitpipe-10,8,8,0,3s,0s,10214,0,3401,0,3.002963708s,11.110681s,370%,46%,0.714,1.613,2.335,2.606,2.884,3.238,3.572,4.178,5.117
+multi-1,8,8,0,3s,0s,10073,0,3354,0,3.002897447s,10.414159s,347%,43%,1.068,2.391,2.574,2.671,2.770,2.877,2.941,3.066,3.540
+multi-2,8,8,0,3s,0s,10367,0,3452,0,3.003101567s,14.077409s,469%,59%,0.949,1.756,2.126,2.391,2.761,3.069,3.335,3.866,6.366
+multi-4,8,8,0,3s,0s,11924,0,3972,0,3.001808613s,20.017767s,667%,83%,0.949,1.556,1.718,1.887,2.165,2.452,2.682,3.473,13.351
+multi-8,8,8,0,3s,0s,11903,0,3965,0,3.002323502s,19.983518s,666%,83%,0.949,1.556,1.718,1.871,2.162,2.474,2.684,3.509,21.060
+multipipe-1,8,8,0,3s,0s,8906,0,2966,0,3.00293s,9.505048s,317%,40%,1.198,2.612,2.750,2.873,3.189,3.631,4.126,4.650,5.336
+multipipe-2,8,8,0,3s,0s,10266,0,3420,0,3.001994275s,12.108003s,403%,50%,1.309,1.851,2.187,2.601,2.928,3.275,3.487,3.957,7.640
+multipipe-4,8,8,0,3s,0s,12302,0,4097,0,3.003034835s,20.678246s,689%,86%,0.950,1.566,1.720,1.899,2.217,2.621,2.913,3.740,9.537
+multipipe-8,8,8,0,3s,0s,12322,0,4104,0,3.00237017s,20.844663s,694%,87%,0.950,1.558,1.719,1.788,2.057,2.626,3.466,5.050,11.461
+
+foreach mode ( ideal locking finelocking parsteam multi-1 multi-2 multi-4 multi-8 linearpipe-0 linearpipe-1 linearpipe-10 splitpipe-0 splitpipe-1 splitpipe-10 multipipe-1 multipipe-2 multipipe-4 multipipe-8 )
+go run main.go burn.go perf.go --dur=3s --par=8 --trace=./trace-$mode.out -mode=$mode
 go tool trace --pprof=sync ./trace-$mode.out > ./sync-$mode.pprof
 go-torch -b ./sync-$mode.pprof -f ./torch-$mode.svg
 end

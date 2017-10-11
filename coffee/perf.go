@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"math/rand"
+	"runtime"
 	"sort"
 	"sync"
 	"syscall"
@@ -17,12 +18,13 @@ type perfArg struct {
 	interval time.Duration // request interval
 }
 
-const perfArgHeader = "mode,par,maxq,dur,interval"
+const perfArgHeader = "mode,par,maxprocs,maxq,dur,interval"
 
 func (arg perfArg) String() string {
 	return fmt.Sprintf(
-		"%s,%d,%d,%s,%s",
-		arg.mode, arg.par, arg.maxq, arg.dur, arg.interval)
+		"%s,%d,%d,%d,%s,%s",
+		arg.mode, arg.par, runtime.GOMAXPROCS(0),
+		arg.maxq, arg.dur, arg.interval)
 }
 
 const maxSamples = 10000
