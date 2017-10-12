@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-var opsPerSec int = 53884 // for useCPU
+var opsPerSec int // for useCPU
 
 func oneOp() {
 	var b [64]byte
