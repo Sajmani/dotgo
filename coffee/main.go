@@ -16,6 +16,7 @@ import (
 	"os"
 	"runtime"
 	"runtime/trace"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -23,7 +24,8 @@ import (
 )
 
 var (
-	mode = flag.String("mode", "ideal", `comma-separated list of modes:
+	check = flag.Bool("check", false, "check variance of useCPU")
+	mode  = flag.String("mode", "ideal", `comma-separated list of modes:
 ideal: no synchronization, no contention overhead.  Fails the race detector.
 locking: one lock, maximal contention.
 finelocking: one lock per machine, permitting greater parallelism.
@@ -35,6 +37,10 @@ multipipe-N: N copies of linearpipe.
 `)
 	duration  = flag.Duration("dur", 1*time.Second, "perf test duration")
 	interval  = flag.Duration("interval", 0, "perf test request interval")
+	grindTime = flag.Duration("grind", 250*time.Microsecond, "grind phase duration")
+	pressTime = flag.Duration("press", 250*time.Microsecond, "press phase duration")
+	steamTime = flag.Duration("steam", 250*time.Microsecond, "steam phase duration")
+	latteTime = flag.Duration("latte", 250*time.Microsecond, "latte phase duration")
 	traceFlag = flag.String("trace", "", "execution trace file, e.g., ./trace.out")
 	pars      intList
 	maxqs     intList
@@ -90,25 +96,25 @@ func idealBrew() latte {
 
 func grindCoffee(count *int) grounds {
 	*count++
-	useCPU(250 * time.Microsecond)
+	useCPU(*grindTime)
 	return grounds(0)
 }
 
 func makeEspresso(count *int, grounds grounds) coffee {
 	*count++
-	useCPU(250 * time.Microsecond)
+	useCPU(*pressTime)
 	return coffee(grounds)
 }
 
 func steamMilk(count *int) milk {
 	*count++
-	useCPU(250 * time.Microsecond)
+	useCPU(*steamTime)
 	return milk(0)
 }
 
 func makeLatte(coffee coffee, milk milk) latte {
 	// No shared state to contend on.
-	useCPU(250 * time.Microsecond)
+	useCPU(*latteTime)
 	return latte(int(coffee) + int(milk))
 }
 
@@ -214,6 +220,8 @@ type order struct {
 }
 
 type linearPipeline struct {
+	grindCount, pressCount, steamCount int
+
 	orders            chan order
 	ordersWithGrounds chan order
 	ordersWithCoffee  chan order
@@ -233,6 +241,21 @@ func newLinearPipeline(buffer int) *linearPipeline {
 	return p
 }
 
+// newLinearPipelineMulti returns a pipeline that uses a shared orders channel
+// from multiPipeline.
+func newLinearPipelineMulti(orders chan order) *linearPipeline {
+	p := &linearPipeline{
+		orders:            orders,
+		ordersWithGrounds: make(chan order, 0),
+		ordersWithCoffee:  make(chan order, 0),
+		done:              make(chan int),
+	}
+	go p.grinder()
+	go p.presser()
+	go p.steamer()
+	return p
+}
+
 func (p *linearPipeline) brew() latte {
 	o := order{milk: make(chan milk, 1)}
 	p.orders <- o
@@ -242,7 +265,7 @@ func (p *linearPipeline) brew() latte {
 
 func (p *linearPipeline) grinder() {
 	for o := range p.orders {
-		o.grounds = grindCoffee(&grindCount)
+		o.grounds = grindCoffee(&p.grindCount)
 		p.ordersWithGrounds <- o
 	}
 	close(p.ordersWithGrounds)
@@ -250,7 +273,7 @@ func (p *linearPipeline) grinder() {
 
 func (p *linearPipeline) presser() {
 	for o := range p.ordersWithGrounds {
-		o.coffee = makeEspresso(&pressCount, o.grounds)
+		o.coffee = makeEspresso(&p.pressCount, o.grounds)
 		p.ordersWithCoffee <- o
 	}
 	close(p.ordersWithCoffee)
@@ -258,7 +281,7 @@ func (p *linearPipeline) presser() {
 
 func (p *linearPipeline) steamer() {
 	for o := range p.ordersWithCoffee {
-		o.milk <- steamMilk(&steamCount)
+		o.milk <- steamMilk(&p.steamCount)
 	}
 	close(p.done)
 }
@@ -275,6 +298,7 @@ type splitOrder struct {
 	milk    chan milk
 }
 type splitPipeline struct {
+	grindCount, pressCount, steamCount          int
 	coffeeOrders, milkOrders, ordersWithGrounds chan splitOrder
 	presserDone, steamerDone                    chan int
 }
@@ -307,7 +331,7 @@ func (p *splitPipeline) brew() latte {
 
 func (p *splitPipeline) grinder() {
 	for o := range p.coffeeOrders {
-		o.grounds = grindCoffee(&grindCount)
+		o.grounds = grindCoffee(&p.grindCount)
 		p.ordersWithGrounds <- o
 	}
 	close(p.ordersWithGrounds)
@@ -315,14 +339,14 @@ func (p *splitPipeline) grinder() {
 
 func (p *splitPipeline) presser() {
 	for o := range p.ordersWithGrounds {
-		o.coffee <- makeEspresso(&pressCount, o.grounds)
+		o.coffee <- makeEspresso(&p.pressCount, o.grounds)
 	}
 	close(p.presserDone)
 }
 
 func (p *splitPipeline) steamer() {
 	for o := range p.milkOrders {
-		o.milk <- steamMilk(&steamCount)
+		o.milk <- steamMilk(&p.steamCount)
 	}
 	close(p.steamerDone)
 }
@@ -336,15 +360,17 @@ func (p *splitPipeline) close() {
 
 // Multiple copies of linearPipeline, like multiple coffee shops.
 type multiPipeline struct {
-	pipes chan *linearPipeline
+	orders chan order
+	pipes  chan *linearPipeline
 }
 
 func newMultiPipeline(n int) *multiPipeline {
 	p := &multiPipeline{
-		pipes: make(chan *linearPipeline, n),
+		orders: make(chan order),
+		pipes:  make(chan *linearPipeline, n),
 	}
 	for i := 0; i < n; i++ {
-		p.pipes <- newLinearPipeline(0) // no buffering
+		p.pipes <- newLinearPipelineMulti(p.orders)
 	}
 	return p
 }
@@ -359,9 +385,10 @@ func (p *multiPipeline) brew() latte {
 }
 
 func (p *multiPipeline) close() {
+	close(p.orders)
 	close(p.pipes)
 	for lp := range p.pipes {
-		lp.close()
+		<-lp.done
 	}
 }
 
@@ -369,6 +396,10 @@ func main() {
 	rand.Seed(time.Now().UnixNano())
 	log.Print("GOMAXPROCS=", runtime.GOMAXPROCS(0))
 	flag.Parse()
+	if *check {
+		checkVariance()
+		return
+	}
 	if len(pars) == 0 {
 		pars = []int{1}
 	}
@@ -461,4 +492,19 @@ func modeParam(mode, prefix string, n *int) bool {
 		log.Panicf("bad mode %s: %v", mode, err)
 	}
 	return true
+}
+
+func checkVariance() {
+	var ds []time.Duration
+	for i := 0; i < 100; i++ {
+		start := time.Now()
+		useCPU(100 * time.Microsecond)
+		elapsed := time.Since(start)
+		ds = append(ds, elapsed)
+	}
+	sort.Slice(ds, func(i, j int) bool {
+		return ds[i] < ds[j]
+	})
+	log.Println("min, 5, 25, 50, 75, 90, 95, max")
+	log.Println(ds[0], ds[5], ds[25], ds[50], ds[75], ds[90], ds[95], ds[99])
 }
