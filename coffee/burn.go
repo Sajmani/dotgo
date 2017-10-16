@@ -6,7 +6,12 @@ import (
 	"time"
 )
 
-var opsPerSec int // for useCPU
+// opsPerSec is the baseline for useCPU.
+// If zero, it is set automatically during init with a 1-second measurement.
+// Set to non-zero to skip that initialization.
+// Known values:
+// - Sameer's Linux workstation: 54000
+var opsPerSec int = 54000
 
 func oneOp() {
 	var b [64]byte

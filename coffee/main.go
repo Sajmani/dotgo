@@ -30,6 +30,8 @@ ideal: no synchronization, no contention overhead.  Fails the race detector.
 locking: one lock, maximal contention.
 finelocking: one lock per machine, permitting greater parallelism.
 parsteam: finelocking with steaming happening in parallel with the other stages.
+americano: skip the steamMilk stage, but still makeLatte to add the water.
+espresso: skip the steamMilk and makeLatte stages.
 linearpipe-N: a pipeline with one goroutine per machine.
 splitpipe-N: a pipeline with the steamer stage happening in parallel with the other stages.
 multi-N: finelocking but with N copies of each machine.
@@ -162,7 +164,7 @@ func lockingSteam() milk {
 // Can steam milk while grinding & pressing, but this loses to
 // fine-grain locking when all CPUs utilized.
 func parallelSteaming() latte {
-	c := make(chan milk)
+	c := make(chan milk, 1)
 	go func() {
 		c <- lockingSteam()
 	}()
@@ -170,6 +172,24 @@ func parallelSteaming() latte {
 	coffee := lockingPress(grounds)
 	milk := <-c
 	return makeLatte(coffee, milk)
+}
+
+// Americano skips the steamMilk stage.  This simulates making an RPC or doing a
+// cache lookup instead of burning CPU for that stage.  This wins over
+// fine-grain locking.
+func americano() latte {
+	grounds := lockingGrind()
+	coffee := lockingPress(grounds)
+	water := milk(0)
+	return makeLatte(coffee, water)
+}
+
+// Espresso skips the steamMilk and makeLatte stages.  This shows the benefit of
+// skipping optional work (and possibly delivering degraded results).
+func espresso() latte {
+	grounds := lockingGrind()
+	coffee := lockingPress(grounds)
+	return latte(coffee) // no milk or water
 }
 
 // Multiple machines reduce contention.
@@ -468,6 +488,10 @@ func modeFunc(mode string) (func() latte, func()) {
 		return fineLockingBrew, nil
 	case mode == "parsteam":
 		return parallelSteaming, nil
+	case mode == "americano":
+		return americano, nil
+	case mode == "espresso":
+		return espresso, nil
 	case modeParam(mode, "linearpipe-", &n):
 		p := newLinearPipeline(n)
 		return p.brew, p.close

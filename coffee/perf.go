@@ -82,6 +82,9 @@ func perfTest(arg perfArg, f func()) (res perfResult) {
 		go func() {
 			defer wg.Done()
 			for start := range requests {
+				queueTime := time.Since(start)
+				_ = queueTime // not currently used
+				start = time.Now()
 				f()
 				durations <- time.Since(start)
 			}
@@ -158,7 +161,8 @@ func (res perfResult) String() string {
 	return fmt.Sprintf(
 		"%d,%d,%.0f,%.0f,%s,%s,%2.f%%,%2.f%%,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f",
 		res.ops, res.drops, res.opsPerSec(), res.dropsPerSec(),
-		res.walltime, res.exectime, 100*res.utilization(), 100*res.utilization()/float64(res.par),
+		res.walltime, res.exectime, 100*res.utilization(),
+		100*res.utilization()/float64(runtime.GOMAXPROCS(0)),
 		res.min().Seconds()*1000,
 		res.p05().Seconds()*1000, res.p25().Seconds()*1000,
 		res.p50().Seconds()*1000, res.p75().Seconds()*1000,
