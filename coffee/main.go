@@ -44,6 +44,7 @@ multipipe-N: N copies of linearpipe.
 	steamTime = flag.Duration("steam", 250*time.Microsecond, "steam phase duration")
 	latteTime = flag.Duration("latte", 250*time.Microsecond, "latte phase duration")
 	traceFlag = flag.String("trace", "", "execution trace file, e.g., ./trace.out")
+	header    = flag.Bool("header", true, "whether to print CSV header")
 	pars      intList
 	maxqs     intList
 )
@@ -266,8 +267,8 @@ func newLinearPipeline(buffer int) *linearPipeline {
 func newLinearPipelineMulti(orders chan order) *linearPipeline {
 	p := &linearPipeline{
 		orders:            orders,
-		ordersWithGrounds: make(chan order, 0),
-		ordersWithCoffee:  make(chan order, 0),
+		ordersWithGrounds: make(chan order, 10), // small buffer
+		ordersWithCoffee:  make(chan order, 10),
 		done:              make(chan int),
 	}
 	go p.grinder()
@@ -277,6 +278,7 @@ func newLinearPipelineMulti(orders chan order) *linearPipeline {
 }
 
 func (p *linearPipeline) brew() latte {
+	// Buffer result channel to prevent deadlock.
 	o := order{milk: make(chan milk, 1)}
 	p.orders <- o
 	milk := <-o.milk
@@ -311,6 +313,54 @@ func (p *linearPipeline) close() {
 	<-p.done
 }
 
+// Americano pipeline skips the steamMilk step.
+func newAmericanoPipeline(buffer int) *linearPipeline {
+	p := &linearPipeline{
+		orders:            make(chan order, buffer),
+		ordersWithGrounds: make(chan order, buffer),
+		done:              make(chan int),
+	}
+	go p.grinder()
+	go p.americanoPresser()
+	return p
+}
+
+func (p *linearPipeline) americanoBrew() latte {
+	// Buffer result channel to prevent deadlock.
+	o := order{milk: make(chan milk, 1)}
+	p.orders <- o
+	water := <-o.milk
+	return makeLatte(o.coffee, water)
+}
+
+func (p *linearPipeline) americanoPresser() {
+	for o := range p.ordersWithGrounds {
+		o.coffee = makeEspresso(&p.pressCount, o.grounds)
+		o.milk <- milk(0) // water
+	}
+	close(p.done)
+}
+
+// Espresso pipeline skips the steamMilk and makeLatte steps.
+func newEspressoPipeline(buffer int) *linearPipeline {
+	p := &linearPipeline{
+		orders:            make(chan order, buffer),
+		ordersWithGrounds: make(chan order, buffer),
+		done:              make(chan int),
+	}
+	go p.grinder()
+	go p.americanoPresser()
+	return p
+}
+
+func (p *linearPipeline) espressoBrew() latte {
+	// Buffer result channel to prevent deadlock.
+	o := order{milk: make(chan milk, 1)}
+	p.orders <- o
+	<-o.milk               // espresso done
+	return latte(o.coffee) // no milk or water
+}
+
 // Split pipeline
 type splitOrder struct {
 	grounds grounds
@@ -339,13 +389,14 @@ func newSplitPipeline(buffer int) *splitPipeline {
 
 func (p *splitPipeline) brew() latte {
 	o := splitOrder{
+		// Buffer result channel to prevent deadlocks.
 		coffee: make(chan coffee, 1),
 		milk:   make(chan milk, 1),
 	}
 	p.coffeeOrders <- o
 	p.milkOrders <- o
-	milk := <-o.milk // receive in reverse order of send to avoid deadlock
 	coffee := <-o.coffee
+	milk := <-o.milk
 	return makeLatte(coffee, milk)
 }
 
@@ -445,7 +496,9 @@ func main() {
 	}
 	// Run all combinations of modes, parallelisms, and maxqs.
 	// Print output as CSV.
-	fmt.Println(perfArgHeader + "," + perfResultHeader)
+	if *header {
+		fmt.Println(perfArgHeader + "," + perfResultHeader)
+	}
 	for _, mode := range modes {
 		f, close := modeFunc(mode)
 		for _, par := range pars {
@@ -495,6 +548,12 @@ func modeFunc(mode string) (func() latte, func()) {
 	case modeParam(mode, "linearpipe-", &n):
 		p := newLinearPipeline(n)
 		return p.brew, p.close
+	case modeParam(mode, "americanopipe-", &n):
+		p := newAmericanoPipeline(n)
+		return p.americanoBrew, p.close
+	case modeParam(mode, "espressopipe-", &n):
+		p := newEspressoPipeline(n)
+		return p.espressoBrew, p.close
 	case modeParam(mode, "splitpipe-", &n):
 		p := newSplitPipeline(n)
 		return p.brew, p.close
@@ -519,16 +578,29 @@ func modeParam(mode, prefix string, n *int) bool {
 }
 
 func checkVariance() {
+	checkFunc("useCPU", func() {
+		useCPU(*duration)
+	})
+	var mu sync.Mutex
+	checkFunc("useCPULocked", func() {
+		mu.Lock()
+		useCPU(*duration)
+		mu.Unlock()
+	})
+}
+
+func checkFunc(kind string, f func()) {
+	log.Printf("Running %s(%s) 100 times, change with --dur", kind, *duration)
 	var ds []time.Duration
 	for i := 0; i < 100; i++ {
 		start := time.Now()
-		useCPU(100 * time.Microsecond)
+		f()
 		elapsed := time.Since(start)
 		ds = append(ds, elapsed)
 	}
+	log.Println(ds)
 	sort.Slice(ds, func(i, j int) bool {
 		return ds[i] < ds[j]
 	})
-	log.Println("min, 5, 25, 50, 75, 90, 95, max")
-	log.Println(ds[0], ds[5], ds[25], ds[50], ds[75], ds[90], ds[95], ds[99])
+	log.Println(ds)
 }
