@@ -24,6 +24,7 @@ import (
 
 var (
 	check = flag.Bool("check", false, "check variance of useCPU")
+	debug = flag.Bool("debug", false, "print debugging output")
 	mode  = flag.String("mode", "ideal", `comma-separated list of modes:
 ideal: no synchronization, no contention overhead.  Fails the race detector.
 locking: one lock, maximal contention.
@@ -75,8 +76,46 @@ func (il *intList) String() string {
 	return strings.Join(ss, ",")
 }
 
+// A machine keeps a count of how often it's been used and a sample of
+// latencies.
+type machine struct {
+	name string
+	sync.Mutex
+	*sampler
+}
+
+func newMachine(name string) *machine {
+	return &machine{
+		name:    name,
+		sampler: newSampler(),
+	}
+}
+
+func (m *machine) close() {
+	if m == nil {
+		return
+	}
+	m.sampler.close()
+	if *debug {
+		log.Println(m.name, ":", m.sampler)
+	}
+}
+
 // Shared state, requiring synchronization
-var grindCount, pressCount, steamCount int
+var (
+	grinder         = newMachine("grinder")
+	espressoMachine = newMachine("presser")
+	steamer         = newMachine("steamer")
+)
+
+func resetMachines() {
+	grinder.close()
+	espressoMachine.close()
+	steamer.close()
+	grinder = newMachine("grinder")
+	espressoMachine = newMachine("presser")
+	steamer = newMachine("steamer")
+}
 
 // Named types for the pipeline elements.
 type (
@@ -88,29 +127,34 @@ type (
 
 // Ideal case: no contention (fails the race detector with par > 1)
 func idealBrew() latte {
-	grounds := grindCoffee(&grindCount)
-	coffee := makeEspresso(&pressCount, grounds)
-	milk := steamMilk(&steamCount)
+	grounds := grindCoffee(grinder)
+	coffee := makeEspresso(espressoMachine, grounds)
+	milk := steamMilk(steamer)
 	return makeLatte(coffee, milk)
 }
 
 // Simulate one millisecond of prep time.
+// Each stage adds a latency sample to the provided machine.
+// Synchronization must happen outside these stages.
 
-func grindCoffee(count *int) grounds {
-	*count++
+func grindCoffee(grinder *machine) grounds {
+	start := time.Now()
 	useCPU(*grindTime)
+	grinder.add(time.Since(start))
 	return grounds(0)
 }
 
-func makeEspresso(count *int, grounds grounds) coffee {
-	*count++
+func makeEspresso(espressoMachine *machine, grounds grounds) coffee {
+	start := time.Now()
 	useCPU(*pressTime)
+	espressoMachine.add(time.Since(start))
 	return coffee(grounds)
 }
 
-func steamMilk(count *int) milk {
-	*count++
+func steamMilk(steamer *machine) milk {
+	start := time.Now()
 	useCPU(*steamTime)
+	steamer.add(time.Since(start))
 	return milk(0)
 }
 
@@ -126,14 +170,13 @@ var equipment sync.Mutex
 func lockingBrew() latte {
 	equipment.Lock()
 	defer equipment.Unlock()
-	grounds := grindCoffee(&grindCount)
-	coffee := makeEspresso(&pressCount, grounds)
-	milk := steamMilk(&steamCount)
+	grounds := grindCoffee(grinder)
+	coffee := makeEspresso(espressoMachine, grounds)
+	milk := steamMilk(steamer)
 	return makeLatte(coffee, milk)
 }
 
 // Fine-grain locking reduces contention.
-var grinder, espressoMachine, steamer sync.Mutex
 
 func fineLockingBrew() latte {
 	grounds := lockingGrind()
@@ -145,19 +188,19 @@ func fineLockingBrew() latte {
 func lockingGrind() grounds {
 	grinder.Lock()
 	defer grinder.Unlock()
-	return grindCoffee(&grindCount)
+	return grindCoffee(grinder)
 }
 
 func lockingPress(grounds grounds) coffee {
 	espressoMachine.Lock()
 	defer espressoMachine.Unlock()
-	return makeEspresso(&pressCount, grounds)
+	return makeEspresso(espressoMachine, grounds)
 }
 
 func lockingSteam() milk {
 	steamer.Lock()
 	defer steamer.Unlock()
-	return steamMilk(&steamCount)
+	return steamMilk(steamer)
 }
 
 // Paralellizing operations can help, provided there's available CPU.
@@ -193,15 +236,22 @@ func espresso() latte {
 }
 
 // Multiple machines reduce contention.
-var grinders, espressoMachines, steamers chan int
+var grinders, espressoMachines, steamers chan *machine
 
-// newZeroes returns a channel containing n zeroes in its buffer.
-func newZeroes(n int) chan int {
-	c := make(chan int, n)
+// newMachines returns a channel containing n machines in its buffer.
+func newMachines(name string, n int) chan *machine {
+	c := make(chan *machine, n)
 	for i := 0; i < n; i++ {
-		c <- 0
+		c <- newMachine(fmt.Sprintf("%s%d", name, i))
 	}
 	return c
+}
+
+func closeMachines(c chan *machine) {
+	close(c)
+	for m := range c {
+		m.close()
+	}
 }
 
 func multiBrew() latte {
@@ -212,23 +262,23 @@ func multiBrew() latte {
 }
 
 func multiGrind() grounds {
-	count := <-grinders
-	grounds := grindCoffee(&count)
-	grinders <- count
+	m := <-grinders
+	grounds := grindCoffee(m)
+	grinders <- m
 	return grounds
 }
 
 func multiPress(grounds grounds) coffee {
-	count := <-espressoMachines
-	coffee := makeEspresso(&count, grounds)
-	espressoMachines <- count
+	m := <-espressoMachines
+	coffee := makeEspresso(m, grounds)
+	espressoMachines <- m
 	return coffee
 }
 
 func multiSteam() milk {
-	count := <-steamers
-	milk := steamMilk(&count)
-	steamers <- count
+	m := <-steamers
+	milk := steamMilk(m)
+	steamers <- m
 	return milk
 }
 
@@ -240,7 +290,9 @@ type order struct {
 }
 
 type linearPipeline struct {
-	grindCount, pressCount, steamCount int
+	grinderMachine  *machine
+	espressoMachine *machine
+	steamerMachine  *machine
 
 	orders            chan order
 	ordersWithGrounds chan order
@@ -250,6 +302,9 @@ type linearPipeline struct {
 
 func newLinearPipeline(buffer int) *linearPipeline {
 	p := &linearPipeline{
+		grinderMachine:    newMachine("grinder"),
+		espressoMachine:   newMachine("presser"),
+		steamerMachine:    newMachine("steamer"),
 		orders:            make(chan order, buffer),
 		ordersWithGrounds: make(chan order, buffer),
 		ordersWithCoffee:  make(chan order, buffer),
@@ -263,8 +318,11 @@ func newLinearPipeline(buffer int) *linearPipeline {
 
 // newLinearPipelineMulti returns a pipeline that uses a shared orders channel
 // from multiPipeline.
-func newLinearPipelineMulti(orders chan order) *linearPipeline {
+func newLinearPipelineMulti(i int, orders chan order) *linearPipeline {
 	p := &linearPipeline{
+		grinderMachine:    newMachine(fmt.Sprintf("grinder%d", i)),
+		espressoMachine:   newMachine(fmt.Sprintf("presser%d", i)),
+		steamerMachine:    newMachine(fmt.Sprintf("steamer%d", i)),
 		orders:            orders,
 		ordersWithGrounds: make(chan order, 10), // small buffer
 		ordersWithCoffee:  make(chan order, 10),
@@ -286,7 +344,7 @@ func (p *linearPipeline) brew() latte {
 
 func (p *linearPipeline) grinder() {
 	for o := range p.orders {
-		o.grounds = grindCoffee(&p.grindCount)
+		o.grounds = grindCoffee(p.grinderMachine)
 		p.ordersWithGrounds <- o
 	}
 	close(p.ordersWithGrounds)
@@ -294,7 +352,7 @@ func (p *linearPipeline) grinder() {
 
 func (p *linearPipeline) presser() {
 	for o := range p.ordersWithGrounds {
-		o.coffee = makeEspresso(&p.pressCount, o.grounds)
+		o.coffee = makeEspresso(p.espressoMachine, o.grounds)
 		p.ordersWithCoffee <- o
 	}
 	close(p.ordersWithCoffee)
@@ -302,7 +360,7 @@ func (p *linearPipeline) presser() {
 
 func (p *linearPipeline) steamer() {
 	for o := range p.ordersWithCoffee {
-		o.milk <- steamMilk(&p.steamCount)
+		o.milk <- steamMilk(p.steamerMachine)
 	}
 	close(p.done)
 }
@@ -310,11 +368,16 @@ func (p *linearPipeline) steamer() {
 func (p *linearPipeline) close() {
 	close(p.orders)
 	<-p.done
+	p.grinderMachine.close()
+	p.espressoMachine.close()
+	p.steamerMachine.close()
 }
 
 // Americano pipeline skips the steamMilk step.
 func newAmericanoPipeline(buffer int) *linearPipeline {
 	p := &linearPipeline{
+		grinderMachine:    newMachine("grinder"),
+		espressoMachine:   newMachine("presser"),
 		orders:            make(chan order, buffer),
 		ordersWithGrounds: make(chan order, buffer),
 		done:              make(chan int),
@@ -334,7 +397,7 @@ func (p *linearPipeline) americanoBrew() latte {
 
 func (p *linearPipeline) americanoPresser() {
 	for o := range p.ordersWithGrounds {
-		o.coffee = makeEspresso(&p.pressCount, o.grounds)
+		o.coffee = makeEspresso(p.espressoMachine, o.grounds)
 		o.milk <- milk(0) // water
 	}
 	close(p.done)
@@ -343,6 +406,8 @@ func (p *linearPipeline) americanoPresser() {
 // Espresso pipeline skips the steamMilk and makeLatte steps.
 func newEspressoPipeline(buffer int) *linearPipeline {
 	p := &linearPipeline{
+		grinderMachine:    newMachine("grinder"),
+		espressoMachine:   newMachine("presser"),
 		orders:            make(chan order, buffer),
 		ordersWithGrounds: make(chan order, buffer),
 		done:              make(chan int),
@@ -367,17 +432,27 @@ type splitOrder struct {
 	milk    chan milk
 }
 type splitPipeline struct {
-	grindCount, pressCount, steamCount          int
-	coffeeOrders, milkOrders, ordersWithGrounds chan splitOrder
-	presserDone, steamerDone                    chan int
+	grinderMachine  *machine
+	espressoMachine *machine
+	steamerMachine  *machine
+
+	coffeeOrders      chan splitOrder
+	ordersWithGrounds chan splitOrder
+	presserDone       chan int
+
+	milkOrders  chan splitOrder
+	steamerDone chan int
 }
 
 func newSplitPipeline(buffer int) *splitPipeline {
 	p := &splitPipeline{
+		grinderMachine:    newMachine("grinder"),
+		espressoMachine:   newMachine("presser"),
+		steamerMachine:    newMachine("steamer"),
 		coffeeOrders:      make(chan splitOrder, buffer),
 		ordersWithGrounds: make(chan splitOrder, buffer),
-		milkOrders:        make(chan splitOrder, buffer),
 		presserDone:       make(chan int),
+		milkOrders:        make(chan splitOrder, buffer),
 		steamerDone:       make(chan int),
 	}
 	go p.grinder()
@@ -401,7 +476,7 @@ func (p *splitPipeline) brew() latte {
 
 func (p *splitPipeline) grinder() {
 	for o := range p.coffeeOrders {
-		o.grounds = grindCoffee(&p.grindCount)
+		o.grounds = grindCoffee(p.grinderMachine)
 		p.ordersWithGrounds <- o
 	}
 	close(p.ordersWithGrounds)
@@ -409,14 +484,14 @@ func (p *splitPipeline) grinder() {
 
 func (p *splitPipeline) presser() {
 	for o := range p.ordersWithGrounds {
-		o.coffee <- makeEspresso(&p.pressCount, o.grounds)
+		o.coffee <- makeEspresso(p.espressoMachine, o.grounds)
 	}
 	close(p.presserDone)
 }
 
 func (p *splitPipeline) steamer() {
 	for o := range p.milkOrders {
-		o.milk <- steamMilk(&p.steamCount)
+		o.milk <- steamMilk(p.steamerMachine)
 	}
 	close(p.steamerDone)
 }
@@ -426,6 +501,9 @@ func (p *splitPipeline) close() {
 	<-p.presserDone
 	close(p.milkOrders)
 	<-p.steamerDone
+	p.grinderMachine.close()
+	p.espressoMachine.close()
+	p.steamerMachine.close()
 }
 
 // Multiple copies of linearPipeline, like multiple coffee shops.
@@ -440,7 +518,7 @@ func newMultiPipeline(n int) *multiPipeline {
 		pipes:  make(chan *linearPipeline, n),
 	}
 	for i := 0; i < n; i++ {
-		p.pipes <- newLinearPipelineMulti(p.orders)
+		p.pipes <- newLinearPipelineMulti(i, p.orders)
 	}
 	return p
 }
@@ -459,6 +537,9 @@ func (p *multiPipeline) close() {
 	close(p.pipes)
 	for lp := range p.pipes {
 		<-lp.done
+		lp.grinderMachine.close()
+		lp.espressoMachine.close()
+		lp.steamerMachine.close()
 	}
 }
 
@@ -526,24 +607,29 @@ func modeFunc(mode string) (func() latte, func()) {
 	var n int
 	switch {
 	case mode == "ideal":
-		return idealBrew, nil
+		return idealBrew, resetMachines
 	case mode == "locking":
-		return lockingBrew, nil
+		return lockingBrew, resetMachines
 	case modeParam(mode, "multi-", &n):
-		grinders = newZeroes(n)
-		espressoMachines = newZeroes(n)
-		steamers = newZeroes(n)
+		grinders = newMachines("grinder", n)
+		espressoMachines = newMachines("presser", n)
+		steamers = newMachines("steamer", n)
 		return multiBrew, func() {
-			grinders, espressoMachines, steamers = nil, nil, nil
+			closeMachines(grinders)
+			grinders = nil
+			closeMachines(espressoMachines)
+			espressoMachines = nil
+			closeMachines(steamers)
+			steamers = nil
 		}
 	case mode == "finelocking":
-		return fineLockingBrew, nil
+		return fineLockingBrew, resetMachines
 	case mode == "parsteam":
-		return parallelSteaming, nil
+		return parallelSteaming, resetMachines
 	case mode == "americano":
-		return americano, nil
+		return americano, resetMachines
 	case mode == "espresso":
-		return espresso, nil
+		return espresso, resetMachines
 	case modeParam(mode, "linearpipe-", &n):
 		p := newLinearPipeline(n)
 		return p.brew, p.close

@@ -13,7 +13,7 @@ func checkVariance() {
 		par = pars[0]
 	}
 
-	timings := utilization()
+	endUtil := startUtil()
 	var wg sync.WaitGroup
 	wg.Add(par)
 	for i := 0; i < par; i++ {
@@ -25,10 +25,10 @@ func checkVariance() {
 		}()
 	}
 	wg.Wait()
-	wall, exec := timings()
+	wall, exec := endUtil()
 	log.Println("no-locks utilization", exec.Seconds()/wall.Seconds())
 
-	timings = utilization()
+	endUtil = startUtil()
 	var mu sync.Mutex
 	wg.Add(par)
 	for i := 0; i < par; i++ {
@@ -42,10 +42,10 @@ func checkVariance() {
 		}()
 	}
 	wg.Wait()
-	wall, exec = timings()
+	wall, exec = endUtil()
 	log.Println("one-lock utilization", exec.Seconds()/wall.Seconds())
 
-	timings = utilization()
+	endUtil = startUtil()
 	var mu1, mu2, mu3 sync.Mutex
 	wg.Add(par)
 	for i := 0; i < par; i++ {
@@ -67,7 +67,7 @@ func checkVariance() {
 		}()
 	}
 	wg.Wait()
-	wall, exec = timings()
+	wall, exec = endUtil()
 	log.Println("three-locks utilization", exec.Seconds()/wall.Seconds())
 }
 

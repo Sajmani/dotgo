@@ -29,7 +29,93 @@ func (arg perfArg) String() string {
 
 const maxSamples = 10000
 
-func utilization() func() (walltime, exectime time.Duration) {
+type sampler struct {
+	r        *rand.Rand
+	min, max time.Duration
+	samples  []time.Duration
+	count    int
+	closed   bool
+}
+
+func newSampler() *sampler {
+	return &sampler{
+		r:       rand.New(rand.NewSource(time.Now().UnixNano())),
+		samples: make([]time.Duration, 0, maxSamples),
+	}
+}
+
+func (s *sampler) checkClosed(want bool) {
+	if s.closed != want {
+		panic(fmt.Sprintf("sampler: want closed=%v", want))
+	}
+}
+
+func (s *sampler) add(d time.Duration) {
+	s.checkClosed(false)
+	if s.count == 0 {
+		s.min = d
+		s.max = d
+	}
+	s.count++
+	if d < s.min {
+		s.min = d
+	}
+	if d > s.max {
+		s.max = d
+	}
+	// Decide whether to include elapsed in samples using
+	// https://en.wikipedia.org/wiki/Reservoir_sampling#Algorithm_R
+	if len(s.samples) < cap(s.samples) {
+		s.samples = append(s.samples, d)
+	} else if j := s.r.Intn(s.count); j < len(s.samples) {
+		s.samples[j] = d
+	}
+}
+
+func (s *sampler) close() {
+	s.closed = true
+	sort.Slice(s.samples, func(i, j int) bool {
+		return s.samples[i] < s.samples[j]
+	})
+}
+
+func (s *sampler) Min() time.Duration {
+	s.checkClosed(true)
+	return s.min
+}
+
+func (s *sampler) Max() time.Duration {
+	s.checkClosed(true)
+	return s.max
+}
+
+func (s *sampler) p(pct int) time.Duration {
+	s.checkClosed(true)
+	if len(s.samples) == 0 {
+		return 0
+	}
+	return s.samples[len(s.samples)*pct/100]
+}
+
+const samplerHeader = "count,min,p05,p25,p50,p75,p90,p95,p99,max"
+
+func (s *sampler) String() string {
+	s.checkClosed(true)
+	return fmt.Sprintf(
+		"%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f",
+		s.count,
+		s.Min().Seconds()*1000,
+		s.p(5).Seconds()*1000,
+		s.p(25).Seconds()*1000,
+		s.p(50).Seconds()*1000,
+		s.p(75).Seconds()*1000,
+		s.p(90).Seconds()*1000,
+		s.p(95).Seconds()*1000,
+		s.p(99).Seconds()*1000,
+		s.Max().Seconds()*1000)
+}
+
+func startUtil() func() (walltime, exectime time.Duration) {
 	var ru1, ru2 syscall.Rusage
 	syscall.Getrusage(syscall.RUSAGE_SELF, &ru1)
 	start := time.Now()
@@ -47,7 +133,7 @@ func utilization() func() (walltime, exectime time.Duration) {
 // attempt requests and increment res.drops on failure.
 func perfTest(arg perfArg, f func()) (res perfResult) {
 	// Pipeline: request generator -> workers -> sampler
-	timings := utilization()
+	endUtil := startUtil()
 
 	// Generate requests until arg.dur elapses
 	stop := time.NewTimer(arg.dur)
@@ -107,19 +193,12 @@ func perfTest(arg perfArg, f func()) (res perfResult) {
 
 	// Sampler populates result with samples.
 	res.par = arg.par
-	defer res.sortSamples()
-	res.samples = make([]time.Duration, 0, maxSamples)
+	res.sampler = newSampler()
+	defer res.sampler.close()
 	for elapsed := range durations {
-		res.ops++
-		// Decide whether to include elapsed in samples using
-		// https://en.wikipedia.org/wiki/Reservoir_sampling#Algorithm_R
-		if len(res.samples) < cap(res.samples) {
-			res.samples = append(res.samples, elapsed)
-		} else if j := rand.Intn(res.ops); j < len(res.samples) {
-			res.samples[j] = elapsed
-		}
+		res.sampler.add(elapsed)
 	}
-	res.walltime, res.exectime = timings()
+	res.walltime, res.exectime = endUtil()
 	return
 }
 
@@ -127,15 +206,14 @@ func perfTest(arg perfArg, f func()) (res perfResult) {
 // throughput and a latency distribution.
 type perfResult struct {
 	par      int
-	ops      int
 	drops    int // valid iff args.interval > 0
 	exectime time.Duration
 	walltime time.Duration
-	samples  []time.Duration
+	sampler  *sampler
 }
 
 func (res perfResult) opsPerSec() float64 {
-	return float64(res.ops) / res.walltime.Seconds()
+	return float64(res.sampler.count) / res.walltime.Seconds()
 }
 
 func (res perfResult) dropsPerSec() float64 {
@@ -146,33 +224,26 @@ func (res perfResult) utilization() float64 {
 	return res.exectime.Seconds() / res.walltime.Seconds()
 }
 
-func (res *perfResult) sortSamples() {
-	sort.Slice(res.samples, func(i, j int) bool {
-		return res.samples[i] < res.samples[j]
-	})
-}
-
-func (res perfResult) min() time.Duration { return res.samples[0] }
-func (res perfResult) max() time.Duration { return res.samples[len(res.samples)-1] }
-func (res perfResult) p05() time.Duration { return res.samples[len(res.samples)/20] }
-func (res perfResult) p25() time.Duration { return res.samples[len(res.samples)/4] }
-func (res perfResult) p50() time.Duration { return res.samples[len(res.samples)/2] }
-func (res perfResult) p75() time.Duration { return res.samples[len(res.samples)*3/4] }
-func (res perfResult) p90() time.Duration { return res.samples[len(res.samples)*9/10] }
-func (res perfResult) p95() time.Duration { return res.samples[len(res.samples)*95/100] }
-func (res perfResult) p99() time.Duration { return res.samples[len(res.samples)*99/100] }
-
 const perfResultHeader = "ops,drops,thru,dthr,wall,exec,util,upar,min,p05,p25,p50,p75,p90,p95,p99,max"
 
 func (res perfResult) String() string {
 	return fmt.Sprintf(
 		"%d,%d,%.0f,%.0f,%s,%s,%2.f%%,%2.f%%,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f",
-		res.ops, res.drops, res.opsPerSec(), res.dropsPerSec(),
-		res.walltime, res.exectime, 100*res.utilization(),
+		res.sampler.count,
+		res.drops,
+		res.opsPerSec(),
+		res.dropsPerSec(),
+		res.walltime,
+		res.exectime,
+		100*res.utilization(),
 		100*res.utilization()/float64(runtime.GOMAXPROCS(0)),
-		res.min().Seconds()*1000,
-		res.p05().Seconds()*1000, res.p25().Seconds()*1000,
-		res.p50().Seconds()*1000, res.p75().Seconds()*1000,
-		res.p90().Seconds()*1000, res.p95().Seconds()*1000,
-		res.p99().Seconds()*1000, res.max().Seconds()*1000)
+		res.sampler.Min().Seconds()*1000,
+		res.sampler.p(5).Seconds()*1000,
+		res.sampler.p(25).Seconds()*1000,
+		res.sampler.p(50).Seconds()*1000,
+		res.sampler.p(75).Seconds()*1000,
+		res.sampler.p(90).Seconds()*1000,
+		res.sampler.p(95).Seconds()*1000,
+		res.sampler.p(99).Seconds()*1000,
+		res.sampler.Max().Seconds()*1000)
 }
