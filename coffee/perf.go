@@ -29,15 +29,25 @@ func (arg perfArg) String() string {
 
 const maxSamples = 10000
 
+func utilization() func() (walltime, exectime time.Duration) {
+	var ru1, ru2 syscall.Rusage
+	syscall.Getrusage(syscall.RUSAGE_SELF, &ru1)
+	start := time.Now()
+	return func() (walltime, exectime time.Duration) {
+		syscall.Getrusage(syscall.RUSAGE_SELF, &ru2)
+		return time.Since(start),
+			time.Duration(syscall.TimevalToNsec(ru2.Utime) -
+				syscall.TimevalToNsec(ru1.Utime))
+	}
+}
+
 // perfTest runs f repeatedly until arg.dur elapses, then returns a
 // perfResult containing up to maxSamples uniformly selected
 // durations.  If arg.interval > 0, it specifies the rate at which to
 // attempt requests and increment res.drops on failure.
 func perfTest(arg perfArg, f func()) (res perfResult) {
 	// Pipeline: request generator -> workers -> sampler
-	var ru1, ru2 syscall.Rusage
-	syscall.Getrusage(syscall.RUSAGE_SELF, &ru1)
-	start := time.Now()
+	timings := utilization()
 
 	// Generate requests until arg.dur elapses
 	stop := time.NewTimer(arg.dur)
@@ -109,10 +119,7 @@ func perfTest(arg perfArg, f func()) (res perfResult) {
 			res.samples[j] = elapsed
 		}
 	}
-	syscall.Getrusage(syscall.RUSAGE_SELF, &ru2)
-	res.exectime = time.Duration(syscall.TimevalToNsec(ru2.Utime) -
-		syscall.TimevalToNsec(ru1.Utime))
-	res.walltime = time.Since(start)
+	res.walltime, res.exectime = timings()
 	return
 }
 

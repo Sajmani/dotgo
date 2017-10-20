@@ -5,6 +5,8 @@ go-torch -b ./sync-$mode.pprof -f ./torch-$mode.svg
 end
 
 # https://github.com/aclements/perflock
+# Prevents multiple benchmarks from running at once,
+# and keeps CPU from running too hot and so triggering CPU throttling.
 
 # Disable hyperthreading on 12-core Linux machine
 sudo su root

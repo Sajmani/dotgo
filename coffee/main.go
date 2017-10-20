@@ -16,7 +16,6 @@ import (
 	"os"
 	"runtime"
 	"runtime/trace"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -575,32 +574,4 @@ func modeParam(mode, prefix string, n *int) bool {
 		log.Panicf("bad mode %s: %v", mode, err)
 	}
 	return true
-}
-
-func checkVariance() {
-	checkFunc("useCPU", func() {
-		useCPU(*duration)
-	})
-	var mu sync.Mutex
-	checkFunc("useCPULocked", func() {
-		mu.Lock()
-		useCPU(*duration)
-		mu.Unlock()
-	})
-}
-
-func checkFunc(kind string, f func()) {
-	log.Printf("Running %s(%s) 100 times, change with --dur", kind, *duration)
-	var ds []time.Duration
-	for i := 0; i < 100; i++ {
-		start := time.Now()
-		f()
-		elapsed := time.Since(start)
-		ds = append(ds, elapsed)
-	}
-	log.Println(ds)
-	sort.Slice(ds, func(i, j int) bool {
-		return ds[i] < ds[j]
-	})
-	log.Println(ds)
 }
