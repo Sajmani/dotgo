@@ -23,7 +23,6 @@ import (
 )
 
 var (
-	check = flag.Bool("check", false, "check variance of useCPU")
 	debug = flag.Bool("debug", false, "print debugging output")
 	mode  = flag.String("mode", "ideal", `comma-separated list of modes:
 ideal: no synchronization, no contention overhead.  Fails the race detector.
@@ -547,10 +546,6 @@ func main() {
 	rand.Seed(time.Now().UnixNano())
 	log.Print("GOMAXPROCS=", runtime.GOMAXPROCS(0))
 	flag.Parse()
-	if *check {
-		checkVariance()
-		return
-	}
 	if len(pars) == 0 {
 		pars = []int{1}
 	}
