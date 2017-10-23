@@ -23,8 +23,7 @@ import (
 )
 
 var (
-	debug = flag.Bool("debug", false, "print debugging output")
-	mode  = flag.String("mode", "ideal", `comma-separated list of modes:
+	mode = flag.String("mode", "ideal", `comma-separated list of modes:
 ideal: no synchronization, no contention overhead.  Fails the race detector.
 locking: one lock, maximal contention.
 finelocking: one lock per machine, permitting greater parallelism.
@@ -42,6 +41,7 @@ multipipe-N: N copies of linearpipe.
 	pressTime = flag.Duration("press", 250*time.Microsecond, "press phase duration")
 	steamTime = flag.Duration("steam", 250*time.Microsecond, "steam phase duration")
 	latteTime = flag.Duration("latte", 250*time.Microsecond, "latte phase duration")
+	printDurs = flag.Bool("printdurs", false, "print duration distribution of each phase")
 	traceFlag = flag.String("trace", "", "execution trace file, e.g., ./trace.out")
 	header    = flag.Bool("header", true, "whether to print CSV header")
 	pars      intList
@@ -95,7 +95,7 @@ func (m *machine) close() {
 		return
 	}
 	m.sampler.close()
-	if *debug {
+	if *printDurs {
 		log.Println(m.name, ":", m.sampler)
 	}
 }
