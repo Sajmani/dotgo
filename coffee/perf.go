@@ -30,7 +30,6 @@ func (arg perfArg) String() string {
 const maxSamples = 10000
 
 type sampler struct {
-	r        *rand.Rand
 	min, max time.Duration
 	samples  []time.Duration
 	count    int
@@ -39,7 +38,6 @@ type sampler struct {
 
 func newSampler() *sampler {
 	return &sampler{
-		r:       rand.New(rand.NewSource(time.Now().UnixNano())),
 		samples: make([]time.Duration, 0, maxSamples),
 	}
 }
@@ -67,7 +65,7 @@ func (s *sampler) add(d time.Duration) {
 	// https://en.wikipedia.org/wiki/Reservoir_sampling#Algorithm_R
 	if len(s.samples) < cap(s.samples) {
 		s.samples = append(s.samples, d)
-	} else if j := s.r.Intn(s.count); j < len(s.samples) {
+	} else if j := rand.Intn(s.count); j < len(s.samples) {
 		s.samples[j] = d
 	}
 }

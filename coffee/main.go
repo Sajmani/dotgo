@@ -41,6 +41,7 @@ multipipe-N: N copies of linearpipe.
 	pressTime = flag.Duration("press", 1*time.Millisecond, "press phase duration")
 	steamTime = flag.Duration("steam", 1*time.Millisecond, "steam phase duration")
 	latteTime = flag.Duration("latte", 1*time.Millisecond, "latte phase duration")
+	jitter    = flag.Duration("jitter", 0, "duration added/subtracted to each phase, uniformly random around 0")
 	printDurs = flag.Bool("printdurs", false, "print duration distribution of each phase")
 	traceFlag = flag.String("trace", "", "execution trace file, e.g., ./trace.out")
 	header    = flag.Bool("header", true, "whether to print CSV header")
@@ -136,39 +137,43 @@ func idealBrew() latte {
 // Each stage adds a latency sample to the provided machine.
 // Synchronization must happen outside these stages.
 
-func grindCoffee(grinder *machine) grounds {
+func runPhase(d time.Duration) time.Duration {
+	if *jitter > 0 {
+		d += time.Duration(rand.Int63n((*jitter).Nanoseconds()))
+		d -= *jitter / 2
+	}
 	start := time.Now()
-	useCPU(*grindTime)
-	grinder.add(time.Since(start))
+	useCPU(d)
+	return time.Since(start)
+}
+
+func grindCoffee(grinder *machine) grounds {
+	grinder.add(runPhase(*grindTime))
 	return grounds(0)
 }
 
 func makeEspresso(espressoMachine *machine, grounds grounds) coffee {
-	start := time.Now()
-	useCPU(*pressTime)
-	espressoMachine.add(time.Since(start))
+	espressoMachine.add(runPhase(*pressTime))
 	return coffee(grounds)
 }
 
 func steamMilk(steamer *machine) milk {
-	start := time.Now()
-	useCPU(*steamTime)
-	steamer.add(time.Since(start))
+	steamer.add(runPhase(*steamTime))
 	return milk(0)
 }
 
 func makeLatte(coffee coffee, milk milk) latte {
 	// No shared state to contend on.
-	useCPU(*latteTime)
+	runPhase(*latteTime)
 	return latte(int(coffee) + int(milk))
 }
 
-// Locking case: complete contention on a single set of equipent.
-var equipment sync.Mutex
+// Locking case: contention on the whole kitchen.
+var kitchen sync.Mutex
 
 func lockingBrew() latte {
-	equipment.Lock()
-	defer equipment.Unlock()
+	kitchen.Lock()
+	defer kitchen.Unlock()
 	grounds := grindCoffee(grinder)
 	coffee := makeEspresso(espressoMachine, grounds)
 	milk := steamMilk(steamer)
@@ -572,7 +577,7 @@ func main() {
 	// Run all combinations of modes, parallelisms, and maxqs.
 	// Print output as CSV.
 	if *header {
-		fmt.Println(perfArgHeader + "," + perfResultHeader)
+		fmt.Println(perfArgHeader + "," + perfResultHeader + ",jitter")
 	}
 	for _, mode := range modes {
 		f, close := modeFunc(mode)
@@ -589,7 +594,7 @@ func main() {
 					interval: *interval,
 				}
 				res := perfTest(arg, func() { f() })
-				fmt.Println(arg.String() + "," + res.String())
+				fmt.Println(arg.String() + "," + res.String() + "," + (*jitter).String())
 			}
 		}
 		if close != nil {
