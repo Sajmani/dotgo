@@ -41,7 +41,7 @@ multipipe-N: N copies of linearpipe.
 	pressTime = flag.Duration("press", 1*time.Millisecond, "press phase duration")
 	steamTime = flag.Duration("steam", 1*time.Millisecond, "steam phase duration")
 	latteTime = flag.Duration("latte", 1*time.Millisecond, "latte phase duration")
-	jitter    = flag.Duration("jitter", 0, "duration added/subtracted to each phase, uniformly random around 0")
+	jitter    = flag.Duration("jitter", 0, "add uniform random duration in [-jitter/2,+jitter/2] to each phase")
 	printDurs = flag.Bool("printdurs", false, "print duration distribution of each phase")
 	traceFlag = flag.String("trace", "", "execution trace file, e.g., ./trace.out")
 	header    = flag.Bool("header", true, "whether to print CSV header")
