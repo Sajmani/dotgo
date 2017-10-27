@@ -41,7 +41,7 @@ multipipe-N: N copies of linearpipe.
 	pressTime = flag.Duration("press", 1*time.Millisecond, "press phase duration")
 	steamTime = flag.Duration("steam", 1*time.Millisecond, "steam phase duration")
 	latteTime = flag.Duration("latte", 1*time.Millisecond, "latte phase duration")
-	jitter    = flag.Duration("jitter", 0, "add uniform random duration in [0,jitter) to each phase")
+	jitter    = flag.Duration("jitter", 0, "add uniform random duration in [-jitter/2,+jitter/2] to each phase")
 	printDurs = flag.Bool("printdurs", false, "print duration distribution of each phase")
 	traceFlag = flag.String("trace", "", "execution trace file, e.g., ./trace.out")
 	header    = flag.Bool("header", true, "whether to print CSV header")
@@ -140,6 +140,7 @@ func idealBrew() latte {
 func runPhase(d time.Duration) time.Duration {
 	if *jitter > 0 {
 		d += time.Duration(rand.Int63n((*jitter).Nanoseconds()))
+		d -= *jitter / 2
 	}
 	start := time.Now()
 	useCPU(d)
