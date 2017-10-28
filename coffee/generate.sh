@@ -13,7 +13,7 @@ taskset -c 0-5 go run *.go --par=10,100,1000,10000 --dur=4s --mode=ideal,locking
 
 echo multi
 
-taskset -c 0-5 go run *.go --par=10,100,1000,10000 --dur=4s --mode=multi-1,multi-10,multi-100,multi-1000,multi-10000 2> /dev/null > multi.csv
+taskset -c 0-5 go run *.go --par=10,100,1000,10000 --dur=4s --mode=multi-1,multi-2,multi-3,multi-4,multi-5,multi-6,multi-7,multi-8,multi-9,multi-10 2> /dev/null > multi.csv
 
 echo jitter
 
