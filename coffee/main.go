@@ -137,10 +137,10 @@ func idealBrew() latte {
 // Each stage adds a latency sample to the provided machine.
 // Synchronization must happen outside these stages.
 
-func runPhase(d time.Duration) time.Duration {
-	if *jitter > 0 {
-		d += time.Duration(rand.Int63n((*jitter).Nanoseconds()))
-		d -= *jitter / 2
+func runPhase(d, jitter time.Duration) time.Duration {
+	if jitter > 0 {
+		d += time.Duration(rand.Int63n((jitter).Nanoseconds()))
+		d -= jitter / 2
 	}
 	start := time.Now()
 	useCPU(d)
@@ -148,23 +148,23 @@ func runPhase(d time.Duration) time.Duration {
 }
 
 func grindCoffee(grinder *machine) grounds {
-	grinder.add(runPhase(*grindTime))
+	grinder.add(runPhase(*grindTime, *jitter))
 	return grounds(0)
 }
 
 func makeEspresso(espressoMachine *machine, grounds grounds) coffee {
-	espressoMachine.add(runPhase(*pressTime))
+	espressoMachine.add(runPhase(*pressTime, *jitter))
 	return coffee(grounds)
 }
 
 func steamMilk(steamer *machine) milk {
-	steamer.add(runPhase(*steamTime))
+	steamer.add(runPhase(*steamTime, *jitter))
 	return milk(0)
 }
 
 func makeLatte(coffee coffee, milk milk) latte {
 	// No shared state to contend on.
-	runPhase(*latteTime)
+	runPhase(*latteTime, 0) // no jitter
 	return latte(int(coffee) + int(milk))
 }
 
