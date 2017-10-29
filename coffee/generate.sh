@@ -2,7 +2,7 @@
 
 echo vary CPU
 
-echo "" > varycpu.csv
+truncate -s 0 varycpu.csv
 foreach i ( 0 1 2 3 4 5 )
 taskset -c 0-$i go run *.go --header=false --par=0 --dur=10s --mode=ideal,locking,finelocking,parsteam,americano,espresso,linearpipe-0,linearpipe-1,linearpipe-10,splitpipe-0,splitpipe-1,americanopipe-0,americanopipe-1,espressopipe-0,espressopipe-1,multi-1,multi-2,multi-4,multipipe-1,multipipe-2,multipipe-4 2> /dev/null >> varycpu.csv
 end
@@ -17,6 +17,9 @@ taskset -c 0-5 go run *.go --par=10,100,1000,10000 --dur=10s --mode=multi-1,mult
 
 echo jitter
 
-taskset -c 0-5 go run *.go --par=0 --jitter=1ms --dur=10s --mode=ideal,locking,finelocking,parsteam,americano,espresso,linearpipe-0,linearpipe-1,linearpipe-10,splitpipe-0,splitpipe-1,americanopipe-0,americanopipe-1,espressopipe-0,espressopipe-1,multi-1,multi-2,multi-4,multipipe-1,multipipe-2,multipipe-4 2> /dev/null > jitter.csv
+truncate -s 0 jitter.csv
+foreach j ( 500us 1000us 1500us 2000us )
+taskset -c 0-5 go run *.go --header=false --par=0 --jitter=$j --dur=10s --mode=ideal,locking,finelocking,linearpipe-0,linearpipe-1,linearpipe-10,linearpipe-100 2> /dev/null >> jitter.csv
+end
 
 echo done
