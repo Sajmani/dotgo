@@ -1,7 +1,26 @@
 # Introduction
 
-TODO(sameer): write me :-)
+The `coffee` program is a tool for studying parallelism, contention,
+utilization, latency, and throughput.  It simulates making coffee with
+a set of machines (grinder for beans, espresso maker, steamer for
+milk) and measures the performance of various implementations.  The
+measurements show the effects of various structural changes and
+optimizations.
 
+Run `coffee` with no arguments to simulate the "ideal" scenario with 1
+worker.  Run `coffee --help` to see flags for configuring the
+simulation.  See `generate.sh` for commands that generate measurements
+for many different scenarios.
+
+# Notes
+
+Run `generate.sh` to regenerate `*.csv` files.
+
+Use `taskset -c 0-5 go run *.go` to restrict execution to specified CPU IDs.
+
+Use https://github.com/aclements/perflock to prevent multiple benchmarks from
+running at once and keep CPU from running too hot (and so triggering CPU
+throttling).
 
 # Generate torch graphs
 
@@ -18,25 +37,3 @@ go tool trace --pprof=sync ./trace-$mode.out > ./sync-$mode.pprof
 go-torch -b ./sync-$mode.pprof -f ./torch-$mode.svg
 end
 ```
-
-# Disable hyperthreading on 12-core Linux machine
-
-```shell
-sudo su root
-echo 0 > /sys/devices/system/cpu/cpu6/online
-echo 0 > /sys/devices/system/cpu/cpu7/online
-echo 0 > /sys/devices/system/cpu/cpu8/online
-echo 0 > /sys/devices/system/cpu/cpu9/online
-echo 0 > /sys/devices/system/cpu/cpu10/online
-echo 0 > /sys/devices/system/cpu/cpu11/online
-```
-
-Better, use `taskset -c 0-5 go run *.go` to restrict execution to specified CPU IDs.
-
-# Notes
-
-Use https://github.com/aclements/perflock to prevent multiple benchmarks from
-running at once and keep CPU from running too hot (and so triggering CPU
-throttling).
-
-Run `generate.sh` to regenerate csv files.
